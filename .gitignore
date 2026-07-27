@@ -1,0 +1,36 @@
+# Secrets / local config
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Benchmark output / data
+bench/results/
+*.parquet
+*.jsonl
+!*.example.jsonl
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Docker volumes / local data
+data/
+pgdata/

@@ -1,0 +1,29 @@
+# Variant A — MQTT only. Broker + TimescaleDB (the consumer runs on the host
+# for the smoke test; it will be containerized once the round-trip is proven).
+# Image versions pinned explicitly — never :latest (context.md §4.5/§12).
+name: magris-variant-a
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:2.14.2-pg16
+    environment:
+      POSTGRES_DB: ${DB_NAME:-magris}
+      POSTGRES_USER: ${DB_USER:-magris}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-magris_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - tsdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  tsdata:

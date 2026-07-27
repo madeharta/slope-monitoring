@@ -1,0 +1,8 @@
+# Runtime deps for loadgen + consumers. Pin ranges; lock exact versions in a
+# lockfile once the component set stabilizes.
+pydantic>=2.6,<3
+aiomqtt>=2.0,<3
+asyncpg>=0.29,<0.31
+
+# Dev/test
+pytest>=8.0
