@@ -1,7 +1,7 @@
 # Project context: IoT streaming architecture benchmark for slope monitoring
 
-This document gives the background needed to work on this project. Read it
-fully before designing or writing code.
+This document gives an AI coding agent the background needed to work on this
+project. Read it fully before proposing designs or writing code.
 
 ---
 
@@ -42,7 +42,8 @@ simulated faithfully).
 - Throughput, CPU, memory, network measurement
 - Failure and recovery scenarios
 - A payload schema that supports heterogeneous sensors and microcontrollers
-- A monitoring dashboard, primarily to validate the pipeline end to end
+- A working monitoring dashboard UI — a graded deliverable, not just a
+  debugging aid. It must render correctly from synthetic data in this phase.
 
 ### Explicitly NOT in scope now
 
@@ -50,7 +51,6 @@ simulated faithfully).
 - Factor of Safety computation or geotechnical modelling
 - Real sensor firmware deployed in the field
 - Alert threshold tuning against real landslide events
-- UI/UX polish
 
 Do not add ML components unless explicitly asked. The prior work (see §3) lost
 credibility by overreaching into ML with insufficient data.
@@ -376,19 +376,53 @@ where interaction is expected.
 
 ## 10. Dashboard
 
-Its purpose here is **validating the pipeline**, not being a product.
+The dashboard is a **deliverable in this phase** and must work end to end on
+synthetic data. Real sensors are not required for it to be considered complete.
 
-Useful panels: site map with per-device health (last seen, battery, RSSI);
-combined time series with rainfall as bars and moisture/suction/tilt as lines on
-a shared axis (this is the standard plot in landslide early-warning literature,
-because cause and effect read directly off it); data quality panel showing
-message rate, gap detection, out-of-range counts; and simple static thresholds
-per sensor.
+### Split the two audiences
 
-**Use Grafana** for operational and health panels — free, connects straight to
-TimescaleDB, saves weeks. Build custom FastAPI views only for domain-specific
-displays. The prior work built everything by hand and then conceded the
-interface was not a research focus.
+- **Grafana — benchmark and infrastructure metrics.** Consumer lag, message
+  rate, per-hop latency percentiles, broker CPU/memory. This exists to support
+  the benchmark work; it is provisioned as config, not hand-built.
+- **Custom FastAPI + frontend — the slope monitoring dashboard.** This is the
+  graded artefact. Do not try to make Grafana do this job.
+
+### Hard requirement: registry-driven, never hardcoded
+
+Every panel, device, sensor, and series must be derived at runtime from the
+`devices` / `sensors` tables and the distinct `quantity` values present in the
+data. The prior work hardcoded `sensor1`–`sensor6` in a module-level dict (see
+§4.3); adding a sensor meant editing source.
+
+The acceptance test for this: **start the system, then introduce a device
+carrying a sensor type that has never been seen before, and have it appear in
+the dashboard with no redeploy and no code change.** That demo is the single
+strongest piece of evidence for this project's "flexible IoT" claim — treat it
+as a first-class requirement, not a nice-to-have.
+
+### Two data paths
+
+Live view streams from the broker/Kafka via SSE. Historical view queries
+TimescaleDB. Both must work; do not implement one and fake the other.
+
+### Panels
+
+- Site map with per-device health: last seen, battery, RSSI, online/offline
+- Combined time series — rainfall as bars, moisture/suction/tilt as lines on a
+  shared time axis. This is the standard plot in landslide early-warning
+  literature because cause and effect read directly off it. Make this the
+  primary view.
+- Data quality: message rate, gap detection, stuck-value and out-of-range counts
+- Simple static per-sensor thresholds with a visible state (normal / watch /
+  alert). Threshold *tuning* is out of scope; the mechanism is not.
+
+### Note on synthetic data
+
+Because the dashboard is demonstrated on synthetic data, its credibility depends
+entirely on the physical layer of the load generator (§7). If tilt is pure
+random noise and moisture does not respond to rainfall with a plausible lag, the
+charts will look wrong to anyone who knows the domain. The realism layer is a
+dashboard requirement, not only a benchmark one.
 
 ---
 
