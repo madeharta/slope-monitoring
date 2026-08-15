@@ -31,8 +31,14 @@ system will be revised at that point.
 
 For now, all load is **synthetic**. This is standard practice for infrastructure
 benchmarking and is not a compromise — real payload contents do not change
-latency characteristics, only payload size and shape do (and those are
-simulated faithfully).
+latency characteristics, only payload size and shape do.
+
+> **Revised 2026-08-06.** This section originally added "(and those are
+> simulated faithfully)". Contact with an operational deployment showed that
+> claim does not hold unqualified: the load generator's *pattern* is steady
+> where the field is burst-driven, and its payload may be orders of magnitude
+> too small. The justification for synthetic load still stands; the assertion
+> that the current implementation already satisfies it does not. See **§14**.
 
 ### In scope now
 
@@ -229,9 +235,62 @@ devices --> EMQX/HiveMQ (built-in Kafka bridge) --> Kafka --> consumers
 
 Removes Kafka Connect entirely: one fewer service, one fewer hop, one fewer VM.
 
+**Feasibility risk — verify before committing effort.** A *native* Kafka bridge
+is generally not an open-source-edition feature; EMQX and HiveMQ both place it
+in their commercial editions, with trials available. Licensing terms change
+between versions, so confirm against the documentation for the exact version to
+be pinned before building. If it turns out to be unobtainable, C is dropped and
+that is reported as a limitation — a documented constraint, not a failure. The
+same check applies to the `MqttSourceConnector` used by B.
+
 ### Optional variant D — Kafka in KRaft mode
 
 Any of B or C with Zookeeper eliminated.
+
+### Why three variants and not two
+
+Each variant plays a distinct role: **A is the null hypothesis** (the simplest
+thing that could work), **B is the incumbent** (the prior work's design, the
+thing being re-measured), and **C is the positive proposal** (what this project
+suggests instead). Without C the thesis is purely critical — it dismantles the
+prior answer without offering one.
+
+The stronger justification is methodological. §9 requires sweeping **one
+variable at a time**, and with only A and B that requirement is violated:
+
+| Pair | What differs | Variables |
+|---|---|---|
+| A vs B | Kafka **and** Kafka Connect | **two** |
+| A vs C | Kafka only | one |
+| B vs C | Kafka Connect only | one |
+
+With A and B alone, a measured difference confounds the cost of Kafka with the
+cost of Kafka Connect, and neither can be attributed. **C is what makes the
+comparison single-variable**, so it is a requirement of the design rather than
+an optional third data point.
+
+**The confound in C, stated plainly.** C does not change only one thing relative
+to B: it removes Kafka Connect *and* replaces the broker (Mosquitto → EMQX). So
+"B vs C isolates Kafka Connect" is not true as written. If C measures faster,
+the cause could be the removed hop or simply a different broker implementation.
+
+Close it with one control run — **topology A running on EMQX instead of
+Mosquitto**:
+
+```
+A-Mosquitto  vs  A-EMQX   ->  the broker effect
+A-EMQX       vs  C        ->  the Kafka Connect effect, attributable
+```
+
+One extra run buys the attribution. If it is not run, the claim must be weakened
+to "C is lower-latency overall" with no stated cause, and this confound recorded
+under Limitations. Raise it in the methodology chapter rather than waiting for an
+examiner to find it.
+
+**Do not claim C answers the prior work's future work.** Their stated
+limitations (§3) list fault tolerance, partition count, device-side network, ML
+practice, kriging, and UI/UX — **Kafka Connect is not among them**. Partition
+count is the one that legitimately connects to B and C.
 
 ---
 
@@ -415,6 +474,12 @@ payload-shape logic that those tools cannot express.
   out-of-order arrival, devices going offline and reconnecting. A monitoring
   dashboard's real job is surfacing these, not drawing smooth lines.
 
+  **Store-and-forward replay is a distinct scenario and must be implemented
+  separately** (added 2026-08-06, see §14). A reconnect resumes live traffic; a
+  replay delivers hours of buffered readings at maximum rate when a link
+  returns. Real nodes buffer to local storage during an outage and auto-sync
+  afterwards, which makes replay — not steady state — the moment of peak load.
+
 Do not use the prior work's approach of `random.uniform(-90, 90)` for latitude —
 that scatters sensors across the entire globe and makes any spatial view
 meaningless.
@@ -449,12 +514,13 @@ consumer lag, and recovery time after induced failure.
 | Variable | Values to sweep | Why it matters |
 |---|---|---|
 | Architecture | A, B, C (and optionally D) | The central research question |
-| Device count | Sweep until saturation, beyond 1000 | Prior work never found the limit |
+| **Message pattern** | Steady, bursty, **post-outage replay** | **Primary axis** (raised 2026-08-06, §14). Real deployments are near-idle between 15-minute bursts; the peak is a replay of buffered data after a link outage, not steady traffic |
+| **Payload size** | 1 / 10 / 100 / 900 readings per message | **Added 2026-08-06, §14.** A batched burst may be two to three orders of magnitude larger than the single-reading message currently benchmarked. Size, not format, is the dominant payload effect |
+| Device count | Sweep until saturation, beyond 1000 | Prior work never found the limit. Note this axis measures *concurrent publishing sessions*, which equals node count only on a direct-IP path — gateway-mediated transports collapse many nodes into one session (§14) |
 | MQTT QoS | 0, 1, 2 | Never examined in prior work; latency vs delivery guarantee trade-off matters when losing a landslide alert is costly |
 | Kafka partitions | 1, 3, 6 | Prior work used 1 and flagged this as future work |
 | Payload format | JSON vs Protobuf/Avro | Heterogeneous envelope is larger than a flat 7-field record |
-| Message pattern | Steady vs bursty | Rain gauges tip irregularly; during heavy rain all nodes report faster at once |
-| Failure injection | Kill/restart Connect, broker, consumer | Prior work listed this as a limitation |
+| Failure injection | Kill/restart Connect, broker, consumer — **during a replay burst** | Prior work listed this as a limitation. Timing matters: where nodes buffer locally, an outage loses nothing, so injecting during steady traffic measures the wrong moment (§14) |
 
 Do not run the full cross-product — that explodes into hundreds of runs. Pick a
 baseline configuration, sweep one variable at a time, and only cross variables
@@ -850,3 +916,99 @@ vanilla JS is where chart-lifecycle bugs accumulate.
 - **Factor of Safety (FoS)** — ratio of resisting to driving forces on a slope.
   Below 1.0 indicates failure. Out of scope for this phase, but the eventual
   target output.
+
+---
+
+## 14. Field contact and revisions
+
+**2026-08-06 — briefing from the ITB IoT team.**
+
+Everything in §1–§13 was written before any contact with a deployed system. This
+section records what changed after the first such contact, and which earlier
+statements it supersedes. Earlier text is **not** rewritten — the sequence of
+what was assumed, what was checked, and what was revised is part of the thesis
+argument.
+
+Source notes: `slope-monitoring/raw/2026-08-06-itb-meeting.md`.
+
+### The system described
+
+An operational slope-monitoring installation on mine highwalls (PPA). Nodes in
+IP67 enclosures carry a **GNSS ZED-F9P** dual-band receiver for surface creep
+(10 mm + 1 ppm, up to 10 Hz) and **ADXL355 / MPU9025** accelerometers for
+blast-induced vibration. A Base Station on stable ground with a choke-ring
+antenna supplies RTK/PPK corrections.
+
+Telemetry is three-tier: **4G primary** (report every 15 minutes carrying
+1-second logs), **LoRa failover** through the Base Station, and **SD-card
+buffering** with automatic burst replay when the link returns.
+
+### What this changes
+
+1. **Load pattern, not device count, is the axis that matters.** Normal
+   operation is near-idle; the peak is a post-outage replay. §9 revised
+   accordingly, and §7's failure layer gains replay as a distinct scenario.
+2. **The synthetic-load justification needs qualifying.** §2's original claim
+   that payload size and shape were "simulated faithfully" does not survive:
+   the generator is steady where the field bursts, and its ~250-byte message may
+   be far smaller than a batched burst. The *principle* is unaffected — only the
+   claim that the current implementation already meets it.
+3. **Payload size becomes a sweep variable in its own right** (§9). Previously
+   only payload *format* was swept.
+4. **Failure injection must happen during a replay burst** (§9). Because nodes
+   buffer locally, a network outage loses nothing without help from the
+   pipeline — so the durability advantage of a retained log narrows to one
+   specific window: a *consumer* restart while a replay is in flight. That is a
+   sharper and more measurable claim than the general argument in §5.
+5. **The device-count axis needs a caveat.** On LoRa failover, nodes hold no IP
+   session and the Base Station relays for all of them, so N nodes appear as one
+   publisher. The axis measures concurrent sessions, not nodes. This does not
+   weaken §4.1 — that is a rule about the *load generator*, and it stands.
+6. **Latency must be reported per population.** Replayed records carry
+   timestamps hours older than their receipt, so pooling replay and live traffic
+   into one percentile produces a meaningless number. §8's percentile rule now
+   requires stating which population and which hop a figure covers.
+
+### What this confirms
+
+- **The Raspberry Pi edge-gateway decision (§6).** The Base Station is exactly
+  that shape. The choice predates contact with a deployment that uses one.
+- **Narrow/long storage (§6).** GNSS displacement and vibration enter as new
+  `quantity` values with no migration and no consumer change.
+- **One client per device (§4.1).** Now also verified in measurement:
+  `bench/BENCHMARK.md` records established connections equal to device count at
+  every scale from 100 to 4000.
+- **The measured throughput range is relevant.** The ITB team independently
+  nominates 2,000–4,000 msg/s as the realistic extreme for replay, which
+  brackets the ceiling reached by the Variant A sweep.
+
+### Unresolved — resolve before sizing any replay experiment
+
+- **"900 data per 1 detik" is ambiguous by a factor of 900.** It reads either as
+  900 records per 15-minute cycle (1 Hz logging over 900 seconds, consistent
+  with the same source's description of the 4G path) or as 900 records per
+  second sustained. Under the first, a 20-node fleet drains a six-hour backlog
+  in roughly four minutes at measured Variant A capacity; under the second the
+  same fleet produces ~18,000 msg/s at rest. **These give opposite answers to
+  the research question**, and no further benchmarking resolves it.
+- **Batched or per-record?** Whether a burst is one large message or ~900 small
+  ones. Broker cost differs completely.
+- **Node count per site**, still unanchored.
+- **Accelerometer sampling rate.** Bears on whether narrow/long storage suits
+  high-rate waveform data, or whether triggered segments are needed alongside it.
+- **The HTTP endpoint** mentioned alongside MQTT — if real, a second ingestion
+  path outside every variant's contract.
+
+### Scope
+
+The described system lists AI/ML training for slope-stability prediction among
+its purposes. That remains **out of scope** here (§2). The defensible position is
+that this pipeline *supplies* clean, latency-characterised data for such work;
+the modelling is a separate study.
+
+### Status of this source
+
+First-hand from the team that built the system, but delivered verbally and
+summarised secondhand — no datasheets, no captured payloads, no timing traces.
+Treat as **medium confidence**. Actual JSON samples, a burst timing capture, and
+a node count would raise it.

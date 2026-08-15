@@ -1,0 +1,4 @@
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+asyncpg>=0.29,<0.31
+paho-mqtt>=2.0,<3   # SSE stream uses a paho background thread (Windows asyncio-loop safe)

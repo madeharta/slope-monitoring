@@ -153,6 +153,15 @@ async def main() -> None:
         f"(batch: {max_rows} rows / {flush_interval_s * 1000:.0f} ms, Ctrl-C to stop)",
         flush=True,
     )
+    # Malformed-payload logging is rate-limited on purpose. A single stray
+    # publisher on a matching topic can produce hundreds of thousands of drops,
+    # and printing a full pydantic error for each one grew the log past 500 MB in
+    # minutes during a benchmark run. Log the first few in full, then only a
+    # periodic count.
+    dropped = 0
+    DROP_LOG_FIRST = 5
+    DROP_LOG_EVERY = 10_000
+
     try:
         async with aiomqtt.Client(
             hostname=mqtt_host, port=mqtt_port, identifier="db-writer"
@@ -163,7 +172,25 @@ async def main() -> None:
                 try:
                     envelope = Envelope.from_json(message.payload)
                 except Exception as exc:  # malformed payload — log and drop, don't crash
-                    print(f"! dropped malformed message on {message.topic}: {exc}", file=sys.stderr)
+                    dropped += 1
+                    if dropped <= DROP_LOG_FIRST:
+                        print(
+                            f"! dropped malformed message on {message.topic}: {exc}",
+                            file=sys.stderr,
+                        )
+                        if dropped == DROP_LOG_FIRST:
+                            print(
+                                f"! further malformed-payload details suppressed; "
+                                f"a count is reported every {DROP_LOG_EVERY}",
+                                file=sys.stderr,
+                            )
+                    elif dropped % DROP_LOG_EVERY == 0:
+                        print(
+                            f"! {dropped} malformed messages dropped so far "
+                            f"(most recent topic: {message.topic}) — is another "
+                            f"publisher using this broker?",
+                            file=sys.stderr,
+                        )
                     continue
                 latency_ms = (received_at - envelope.timestamp).total_seconds() * 1000.0
                 acc.add(latency_ms)
@@ -174,6 +201,8 @@ async def main() -> None:
         await flusher
         await batcher.flush()  # drain anything still buffered
         await pool.close()
+        if dropped:
+            print(f"\n! {dropped} malformed messages dropped in total", file=sys.stderr)
         print("\nlatency summary (ms):", json.dumps(acc.summary(), indent=2))
 
 

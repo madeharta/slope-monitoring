@@ -34,3 +34,7 @@ Thumbs.db
 # Docker volumes / local data
 data/
 pgdata/
+
+# Node / frontend build
+node_modules/
+frontend/dist/

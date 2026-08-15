@@ -39,6 +39,19 @@ CREATE INDEX IF NOT EXISTS measurements_quantity_time
 
 -- Seed the known sites so device upserts satisfy the FK.
 INSERT INTO sites (site_id, name, lat, lon) VALUES
-    ('lereng-a', 'Lereng A (Depok)', -6.3643, 106.8290),
-    ('lereng-b', 'Lereng B (Bogor)', -6.5950, 106.8060)
+    ('lereng-a', 'Slope A (Depok)', -6.3643, 106.8290),
+    ('lereng-b', 'Slope B (Bogor)', -6.5950, 106.8060),
+    ('lereng-c', 'Slope C (Puncak)', -6.7000, 106.9800),
+    ('lereng-d', 'Slope D (Sukabumi)', -6.9200, 106.9270),
+    ('lereng-e', 'Slope E (Megamendung)', -6.6500, 106.8900),
+    ('lereng-f', 'Slope F (Cianjur)', -6.8170, 107.1425)
+ON CONFLICT (site_id) DO NOTHING;
+
+-- Synthetic site used only by the JMeter load test (bench/jmeter/). Kept
+-- separate from the real sites so benchmark traffic never mixes with demo data
+-- and can be deleted with a single `WHERE site_id = 'lereng-load'`.
+-- Without this row the db-writer's device upsert violates the devices->sites
+-- foreign key, which aborts the whole flush transaction and loses the batch.
+INSERT INTO sites (site_id, name, lat, lon) VALUES
+    ('lereng-load', 'Load-test synthetic site', -6.6000, 106.9000)
 ON CONFLICT (site_id) DO NOTHING;

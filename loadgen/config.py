@@ -26,8 +26,12 @@ class Site:
 
 # Real-ish slope monitoring sites, clustered (West Java). Extend as needed.
 SITES: dict[str, Site] = {
-    "lereng-a": Site("lereng-a", "Lereng A (Depok)", -6.3643, 106.8290),
-    "lereng-b": Site("lereng-b", "Lereng B (Bogor)", -6.5950, 106.8060),
+    "lereng-a": Site("lereng-a", "Slope A (Depok)", -6.3643, 106.8290),
+    "lereng-b": Site("lereng-b", "Slope B (Bogor)", -6.5950, 106.8060),
+    "lereng-c": Site("lereng-c", "Slope C (Puncak)", -6.7000, 106.9800),
+    "lereng-d": Site("lereng-d", "Slope D (Sukabumi)", -6.9200, 106.9270),
+    "lereng-e": Site("lereng-e", "Slope E (Megamendung)", -6.6500, 106.8900),
+    "lereng-f": Site("lereng-f", "Slope F (Cianjur)", -6.8170, 107.1425),
 }
 
 
