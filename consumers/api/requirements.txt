@@ -1,4 +1,5 @@
 fastapi>=0.110,<1
 uvicorn>=0.29,<1
 asyncpg>=0.29,<0.31
-paho-mqtt>=2.0,<3   # SSE stream uses a paho background thread (Windows asyncio-loop safe)
+paho-mqtt>=2.0,<3   # SSE stream, SOURCE=mqtt — paho background thread (Windows asyncio-loop safe)
+aiokafka>=0.10,<0.12   # SSE stream, SOURCE=kafka — variant B/C/D live tail

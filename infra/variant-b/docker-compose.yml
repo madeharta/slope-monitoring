@@ -1,0 +1,113 @@
+# Variant B — MQTT -> Kafka Connect (MqttSourceConnector) -> Kafka -> consumers.
+# The prior work's baseline, reproduced for comparison. Same MQTT front door as
+# variant A (devices and the load harness are unchanged); Kafka Connect and
+# Kafka are inserted between the broker and the consumer. The consumer
+# (consumers/db-writer, SOURCE=kafka) and the dashboard are unchanged.
+#
+# Zookeeper is used here on purpose — this is the classic baseline. Variant D is
+# the same topology in KRaft mode (no Zookeeper).
+#
+# Image versions pinned explicitly — never :latest (context.md §4.5/§12).
+name: magris-variant-b
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"          # host-facing listener (db-writer runs on the host)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Two listeners: 29092 for in-network clients (Kafka Connect), 9092 for
+      # host clients (the db-writer). A single-listener setup can only advertise
+      # one hostname and breaks one of the two.
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    restart: unless-stopped
+
+  kafka-connect:
+    build:
+      context: ./kafka-connect
+    depends_on:
+      - kafka
+      - mosquitto
+    ports:
+      - "8083:8083"          # Connect REST API
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_GROUP_ID: magris-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      # Pass the MQTT payload through untouched: the connector emits raw bytes,
+      # Connect serializes them as-is, so the Kafka message value is exactly the
+      # JSON envelope the device published — the consumer parses it identically
+      # to the MQTT path, and end-to-end latency stays comparable.
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.converters.ByteArrayConverter
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+    restart: unless-stopped
+
+  # One-shot: waits for the Connect REST API, then registers (idempotently) the
+  # MQTT source connector so the whole pipeline comes up with one `up`.
+  connect-init:
+    image: curlimages/curl:8.8.0
+    depends_on:
+      - kafka-connect
+    volumes:
+      - ./connectors:/connectors:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "waiting for Kafka Connect REST API..."
+        until curl -sf http://kafka-connect:8083/connectors >/dev/null 2>&1; do sleep 3; done
+        echo "registering mqtt-source connector..."
+        curl -sf -X PUT -H "Content-Type: application/json" \
+          --data @/connectors/mqtt-source.json \
+          http://kafka-connect:8083/connectors/mqtt-source/config && \
+          echo "" && echo "mqtt-source registered." || echo "registration failed."
+    restart: "no"
+
+  timescaledb:
+    image: timescale/timescaledb:2.14.2-pg16
+    environment:
+      POSTGRES_DB: ${DB_NAME:-magris}
+      POSTGRES_USER: ${DB_USER:-magris}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-magris_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - tsdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  tsdata:

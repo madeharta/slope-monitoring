@@ -1,11 +1,21 @@
-"""Single MQTT -> SSE fan-out.
+"""MQTT or Kafka -> SSE fan-out (source-aware, mirrors consumers/db-writer).
 
-Uses a paho background network thread (not aiomqtt) so it is independent of the
-web server's asyncio loop policy — on Windows, uvicorn's default Proactor loop
-cannot drive paho's add_reader/add_writer, so we keep MQTT off the async loop
-entirely and bridge into the SSE queues with call_soon_threadsafe. One MQTT
-subscription feeds every browser; the client routes by device_id (context.md
-§10.9 — never one EventSource per sensor).
+The source is selected by the SOURCE env var so the dashboard's live tail flows
+through whichever variant is running, unchanged:
+
+  SOURCE=mqtt (default): a paho background network thread, independent of the web
+    server's asyncio loop — on Windows, uvicorn's default Proactor loop cannot
+    drive paho's add_reader/add_writer, so MQTT is kept off the async loop
+    entirely and bridged into the SSE queues with call_soon_threadsafe.
+  SOURCE=kafka: an aiokafka consumer task running ON the API event loop, reading
+    the topic the MQTT Source Connector (variant B) / native bridge (variant C)
+    feeds. aiokafka uses asyncio transports (not add_reader), so it runs fine on
+    the Proactor loop — no thread bridge needed.
+
+Both sources emit byte-for-byte identical SSE events (one per reading), so the
+frontend is unchanged. One MQTT subscription / one Kafka consumer feeds every
+browser; the client routes by device_id (context.md §10.9 — never one
+EventSource per sensor).
 """
 
 from __future__ import annotations
@@ -15,11 +25,12 @@ import json
 import os
 from datetime import datetime, timezone
 
-import paho.mqtt.client as mqtt
+from common.topics import KAFKA_TOPIC, SUBSCRIBE_ALL
 
 _subscribers: set[asyncio.Queue] = set()
 _loop: asyncio.AbstractEventLoop | None = None
-_client: mqtt.Client | None = None
+_client = None            # paho client (SOURCE=mqtt)
+_kafka_task: asyncio.Task | None = None  # consumer task (SOURCE=kafka)
 
 
 def subscribe() -> asyncio.Queue:
@@ -32,32 +43,16 @@ def unsubscribe(q: asyncio.Queue) -> None:
     _subscribers.discard(q)
 
 
-def _broadcast(event: dict) -> None:
-    payload = json.dumps(event)
-
-    def _put() -> None:
-        for q in list(_subscribers):
-            try:
-                q.put_nowait(payload)
-            except asyncio.QueueFull:
-                pass  # slow client — drop rather than stall the fan-out
-
-    if _loop is not None:
-        _loop.call_soon_threadsafe(_put)
-
-
-def _on_connect(client, userdata, flags, reason_code, properties=None):
-    client.subscribe("slope/+/+/data")
-
-
-def _on_message(client, userdata, msg):
-    received = datetime.now(timezone.utc).isoformat()
+def _events_from_payload(payload: str | bytes, received: str) -> list[dict]:
+    """Parse one envelope into one SSE event per reading. Shared by both sources
+    so the event shape never diverges between variants."""
     try:
-        env = json.loads(msg.payload)
+        env = json.loads(payload)
     except Exception:
-        return
+        return []  # keepalive/comment lines or malformed payloads
+    out = []
     for r in env.get("readings", []):
-        _broadcast({
+        out.append({
             "device_id": env.get("device_id"),
             "site_id": env.get("site_id"),
             "quantity": r.get("quantity"),
@@ -68,12 +63,36 @@ def _on_message(client, userdata, msg):
             "t": env.get("timestamp"),
             "received": received,
         })
+    return out
 
 
-def start() -> None:
-    """Capture the running asyncio loop and start paho's network thread."""
-    global _loop, _client
-    _loop = asyncio.get_running_loop()
+def _deliver(events: list[dict]) -> None:
+    """Fan events out to every SSE queue. MUST run on the event loop."""
+    for ev in events:
+        payload = json.dumps(ev)
+        for q in list(_subscribers):
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                pass  # slow client — drop rather than stall the fan-out
+
+
+# ---- MQTT source (paho background thread) ----
+def _on_connect(client, userdata, flags, reason_code, properties=None):
+    client.subscribe(SUBSCRIBE_ALL)
+
+
+def _on_message(client, userdata, msg):
+    received = datetime.now(timezone.utc).isoformat()
+    events = _events_from_payload(msg.payload, received)
+    if events and _loop is not None:
+        _loop.call_soon_threadsafe(_deliver, events)
+
+
+def _start_mqtt() -> None:
+    global _client
+    import paho.mqtt.client as mqtt
+
     _client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="dashboard-api")
     _client.on_connect = _on_connect
     _client.on_message = _on_message
@@ -81,8 +100,51 @@ def start() -> None:
     _client.loop_start()
 
 
+# ---- Kafka source (aiokafka task on the event loop) ----
+async def _run_kafka() -> None:
+    from aiokafka import AIOKafkaConsumer
+
+    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+    topic = os.getenv("KAFKA_TOPIC", KAFKA_TOPIC)
+    # A unique group per process, reading from `latest`: the dashboard wants the
+    # live tail and must NOT share the db-writer's group (that would split
+    # partitions between them). No commits needed for a fire-and-forget tail.
+    consumer = AIOKafkaConsumer(
+        topic, bootstrap_servers=bootstrap,
+        group_id=f"dashboard-{os.getpid()}",
+        auto_offset_reset="latest", enable_auto_commit=False,
+    )
+    await consumer.start()
+    try:
+        async for msg in consumer:
+            received = datetime.now(timezone.utc).isoformat()
+            _deliver(_events_from_payload(msg.value, received))
+    except asyncio.CancelledError:
+        raise
+    finally:
+        await consumer.stop()
+
+
+def start() -> None:
+    """Capture the running loop and start the configured source."""
+    global _loop, _kafka_task
+    _loop = asyncio.get_running_loop()
+    source = os.getenv("SOURCE", "mqtt").lower()
+    if source == "kafka":
+        _kafka_task = _loop.create_task(_run_kafka())
+    else:
+        _start_mqtt()
+
+
 async def stop() -> None:
-    global _client
+    global _client, _kafka_task
+    if _kafka_task is not None:
+        _kafka_task.cancel()
+        try:
+            await _kafka_task
+        except asyncio.CancelledError:
+            pass
+        _kafka_task = None
     if _client is not None:
         _client.loop_stop()
         _client.disconnect()

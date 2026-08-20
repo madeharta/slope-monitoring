@@ -8,6 +8,12 @@ from __future__ import annotations
 
 SUBSCRIBE_ALL = "slope/+/+/data"
 
+# Kafka topic the MQTT Source Connector (variant B) / native bridge (variant C)
+# writes every MQTT message into. All slope/+/+/data messages land in this one
+# topic; the site_id and device_id are carried inside the JSON envelope, so a
+# single Kafka topic loses nothing and keeps the consumer identical to variant A.
+KAFKA_TOPIC = "slope-data"
+
 
 def build_topic(site_id: str, device_id: str) -> str:
     for part, name in ((site_id, "site_id"), (device_id, "device_id")):

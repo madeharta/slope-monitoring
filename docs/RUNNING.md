@@ -17,6 +17,9 @@ cd frontend && npm install && cd ..
 # 1. infrastructure (MQTT broker + TimescaleDB)
 docker compose -f infra/variant-a/docker-compose.yml up -d
 
+# 1. infrastructure (MQTT broker + Kafka Connect + Kafka + TimescaleDB)
+docker compose -f infra/variant-b/docker-compose.yml up -d
+
 # env used by the Python processes
 export MQTT_HOST=localhost MQTT_PORT=1883 \
        DB_HOST=localhost DB_PORT=5432 DB_NAME=magris DB_USER=magris DB_PASSWORD=magris_dev
@@ -24,11 +27,17 @@ export MQTT_HOST=localhost MQTT_PORT=1883 \
 # 2. consumer: MQTT -> TimescaleDB (batched)
 python consumers/db-writer/writer.py
 
+# 2. consumer: MQTT -> Kafka -> Kafka Connect -> TimescaleDB (batched)
+$env:SOURCE=kafka; python consumers/db-writer/writer.py
+
 # 3. load generator: 6 slopes x 4 sensors, physical model
 python loadgen/fleet.py
 
 # 4. dashboard API (serves the built frontend at http://127.0.0.1:8000)
 python consumers/api/main.py
+
+# 4. dashboard API variant b (serves the built frontend at http://127.0.0.1:8000)
+$env:SOURCE=kafka; python consumers/api/main.py
 ```
 
 ## The frontend
