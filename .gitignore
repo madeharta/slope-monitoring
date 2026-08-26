@@ -38,3 +38,6 @@ pgdata/
 # Node / frontend build
 node_modules/
 frontend/dist/
+
+docs/
+/docs/

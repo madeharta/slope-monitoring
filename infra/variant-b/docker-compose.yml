@@ -99,9 +99,9 @@ services:
   timescaledb:
     image: timescale/timescaledb:2.14.2-pg16
     environment:
-      POSTGRES_DB: ${DB_NAME:-magris}
-      POSTGRES_USER: ${DB_USER:-magris}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-magris_dev}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:

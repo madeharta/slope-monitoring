@@ -1,12 +1,3 @@
-"""Dashboard API. Registry-driven endpoints + one SSE stream, serving the
-built React frontend as static files (single service).
-
-Run (dev, with the Variant-A stack up):
-    python consumers/api/main.py
-Then the Vite dev server proxies /api to this. In production, `npm run build`
-puts files in frontend/dist/ which this serves at /.
-"""
-
 from __future__ import annotations
 
 import asyncio

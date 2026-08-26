@@ -1,23 +1,3 @@
-"""MQTT or Kafka -> SSE fan-out (source-aware, mirrors consumers/db-writer).
-
-The source is selected by the SOURCE env var so the dashboard's live tail flows
-through whichever variant is running, unchanged:
-
-  SOURCE=mqtt (default): a paho background network thread, independent of the web
-    server's asyncio loop — on Windows, uvicorn's default Proactor loop cannot
-    drive paho's add_reader/add_writer, so MQTT is kept off the async loop
-    entirely and bridged into the SSE queues with call_soon_threadsafe.
-  SOURCE=kafka: an aiokafka consumer task running ON the API event loop, reading
-    the topic the MQTT Source Connector (variant B) / native bridge (variant C)
-    feeds. aiokafka uses asyncio transports (not add_reader), so it runs fine on
-    the Proactor loop — no thread bridge needed.
-
-Both sources emit byte-for-byte identical SSE events (one per reading), so the
-frontend is unchanged. One MQTT subscription / one Kafka consumer feeds every
-browser; the client routes by device_id (context.md §10.9 — never one
-EventSource per sensor).
-"""
-
 from __future__ import annotations
 
 import asyncio

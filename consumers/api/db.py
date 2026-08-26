@@ -1,5 +1,3 @@
-"""TimescaleDB access (asyncpg). Queries are registry-driven: sites/devices
-come from their tables, series and quantities come from the data itself."""
 
 from __future__ import annotations
 
@@ -7,6 +5,11 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import asyncpg
+from dotenv import load_dotenv
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(dotenv_path=ROOT_DIR / ".env", override=True)
 
 _pool: asyncpg.Pool | None = None
 

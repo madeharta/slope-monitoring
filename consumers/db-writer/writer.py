@@ -1,37 +1,3 @@
-"""Consumer: MQTT (variant A) or Kafka (variants B/C/D) -> TimescaleDB, batched,
-with a per-message hop stamp.
-
-The *source* is selected by the SOURCE env var so a single consumer serves every
-variant unchanged (context.md: "same consumer interface, so the benchmark
-harness targets any variant unmodified"):
-
-  SOURCE=mqtt   (default)  subscribe to the wildcard MQTT topic directly.
-  SOURCE=kafka             consume the Kafka topic the MQTT Source Connector
-                           (B) or native broker bridge (C) feeds. The Kafka
-                           message value is the untouched JSON envelope (the
-                           connector uses a bytes/ByteArray converter), so the
-                           downstream path — parse, latency, batch, COPY — is
-                           byte-for-byte identical to the MQTT path.
-
-Either way: receipt time is stamped (the consumer hop), end-to-end latency is
-computed against the payload's produce timestamp, then rows are *buffered* and
-flushed in bulk — when the buffer fills (BATCH_MAX_ROWS) or on a timer
-(BATCH_FLUSH_MS). Bulk writes use asyncpg's COPY path (`copy_records_to_table`),
-far faster than one INSERT per reading, which is what lets a single consumer
-keep up under load. Latency is stamped at receipt, *before* buffering, so it is
-transport latency and does not include buffer wait.
-
-Run (host, against a variant compose stack):
-
-    python consumers/db-writer/writer.py                 # variant A (MQTT)
-    SOURCE=kafka python consumers/db-writer/writer.py     # variant B/C/D (Kafka)
-
-Env: SOURCE (mqtt|kafka), MQTT_HOST/MQTT_PORT,
-     KAFKA_BOOTSTRAP (default localhost:9092), KAFKA_TOPIC, KAFKA_GROUP,
-     DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD,
-     BATCH_MAX_ROWS (default 500), BATCH_FLUSH_MS (default 1000).
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -40,9 +6,12 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Repo root on path so `common` imports work (this dir has a hyphen and
 # cannot itself be an importable package).
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(dotenv_path=ROOT_DIR / ".env", override=True)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import asyncpg  # noqa: E402
@@ -222,7 +191,6 @@ async def consume_kafka(ingest: Ingest) -> None:
     finally:
         await consumer.stop()
 
-
 async def main() -> None:
     source = os.getenv("SOURCE", "mqtt").lower()
     if source not in ("mqtt", "kafka"):
@@ -264,7 +232,6 @@ async def main() -> None:
         if ingest.dropped:
             print(f"\n! {ingest.dropped} malformed messages dropped in total", file=sys.stderr)
         print("\nlatency summary (ms):", json.dumps(acc.summary(), indent=2))
-
 
 if __name__ == "__main__":
     # See smoke.py: Windows needs the Selector loop for paho-mqtt sockets.

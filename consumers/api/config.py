@@ -1,11 +1,3 @@
-"""Status thresholds and the status->action mapping.
-
-context.md §10.6 allows exactly three hardcoded things: the layout grid, the
-colour mapping, and the status-to-action mapping. Thresholds are config here
-(tuning is out of scope, the mechanism is not — §10.7). Everything else in the
-UI derives from the data at runtime.
-"""
-
 from __future__ import annotations
 
 # Per-quantity thresholds. `dir="high"` = larger value is worse (tilt, moisture,
