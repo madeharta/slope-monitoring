@@ -1,7 +1,4 @@
 # Slope Landslide Monitoring
-
-Backend, frontend dashboard, data ingestion, GNSS/accelerometer processing, authentication, weather integration, and model-ops foundation for the landslide monitoring system.
-
 ## Current QA Baseline
 
 Validated against the synchronized source package dated 25 September 2026:
@@ -10,8 +7,6 @@ Validated against the synchronized source package dated 25 September 2026:
 144 passed, 1 skipped
 Python compile validation: OK
 ```
-
-Frontend source is included. DevOps must run the frontend build as part of deployment acceptance.
 
 ## Runtime Stack
 
@@ -86,9 +81,9 @@ Every successful upload, including an idempotent duplicate, returns the same con
 
 `battery_cal` values remain `null` until field calibration is saved. Do not treat uncalibrated values as measured calibration coefficients.
 
-## Trigger Flow
+## Blast Trigger Flow
 
-Operator/MFA protected endpoint:
+Operator/MFA protected endpoint: (MFA is disabled curently - for testing purposes)
 
 ```http
 POST /api/v1/blast/trigger
@@ -121,13 +116,7 @@ For LoRa mode, Base reads the configuration and forwards the trigger/config to r
 
 ## Database State
 
-Fresh database bootstrap in `docker/initdb/001_full_schema.sql` is synchronized through revision 17, including:
-
-- upload `communication_mode`;
-- processing state/idempotency columns;
-- `device_battery_cal`.
-
-Existing staging installations that already applied migrations 015 and 016 only need migration 017 for this release.
+Fresh database bootstrap in `docker/initdb/001_full_schema.sql` is synchronized through revision 17.
 
 ## Environment
 
@@ -161,10 +150,14 @@ Generate deployment secrets independently for every environment.
 
 ## Health Check
 
-There is no dedicated `/health` route in this source. Process-level API health is checked using:
+Process-level API health is checked using:
 
 ```bash
 curl -fsS http://127.0.0.1:8000/openapi.json >/dev/null
+```
+or
+```bash
+curl -fsS http://127.0.0.1:8000/docs > /dev/null
 ```
 
 ## Test Commands
@@ -175,7 +168,7 @@ Backend:
 python -m pytest -q
 ```
 
-Expected baseline:
+Expected baseline dated 25 September 2026:
 
 ```text
 144 passed, 1 skipped
