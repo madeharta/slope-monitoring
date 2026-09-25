@@ -1,0 +1,11 @@
+BEGIN;
+DELETE FROM gnss_raw_samples WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM accel_raw_samples WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM device_config WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM device_config_pending WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM blast_trigger_commands WHERE base_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM device_reference_position WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM measurements WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM file_uploads WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+DELETE FROM devices WHERE device_id IN ('BASE-01', 'ROVER-01', 'ROVER-02');
+COMMIT;

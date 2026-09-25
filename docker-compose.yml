@@ -1,0 +1,72 @@
+services:
+  db:
+    image: timescale/timescaledb:2.15.3-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-slope_iot}
+      POSTGRES_USER: ${DB_USER:-slope}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set a strong DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-slope_iot}
+      DB_USER: ${DB_USER:-slope}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set a newly rotated JWT_SECRET_KEY in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      RTKLIB_CONVBIN_PATH: /usr/local/bin/convbin
+      RTKLIB_RNX2RTKP_PATH: /usr/local/bin/rnx2rtkp
+      RTKLIB_NAV_FILE: ${RTKLIB_NAV_FILE:-}
+      MEASUREMENTS_RETENTION_DAYS: ${MEASUREMENTS_RETENTION_DAYS:-730}
+      MFA_ENFORCEMENT_ENABLED: ${MFA_ENFORCEMENT_ENABLED:-true}
+      WEATHER_POLLING_ENABLED: ${WEATHER_POLLING_ENABLED:-false}
+      DEVICE_DEFAULT_PERIODIC_UPLOAD_S: ${DEVICE_DEFAULT_PERIODIC_UPLOAD_S:-300}
+      DEVICE_DEFAULT_FIRMWARE_VERSION: ${DEVICE_DEFAULT_FIRMWARE_VERSION:-}
+      DEVICE_DEFAULT_THRESHOLD_G: ${DEVICE_DEFAULT_THRESHOLD_G:-0.5}
+      DEVICE_DEFAULT_TIME_RECORD_MS: ${DEVICE_DEFAULT_TIME_RECORD_MS:-2000}
+      DEVICE_DEFAULT_TRIGGER_START: ${DEVICE_DEFAULT_TRIGGER_START:-0}
+      DEVICE_DEFAULT_TIMEOUT_TRIGGER: ${DEVICE_DEFAULT_TIMEOUT_TRIGGER:-300}
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5).close()"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 25s
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  db_data:
