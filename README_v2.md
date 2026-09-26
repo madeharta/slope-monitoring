@@ -4,7 +4,7 @@
 Validated against the synchronized source package dated 25 September 2026:
 
 ```text
-144 passed, 1 skipped
+148 passed, 1 skipped
 Python compile validation: OK
 ```
 
@@ -80,39 +80,6 @@ Every successful upload, including an idempotent duplicate, returns the same con
 ```
 
 `battery_cal` values remain `null` until field calibration is saved. Do not treat uncalibrated values as measured calibration coefficients.
-
-## Blast Trigger Flow
-
-Operator/MFA protected endpoint: (MFA is disabled curently - for testing purposes)
-
-```http
-POST /api/v1/blast/trigger
-```
-
-Example body:
-
-```json
-{
-  "base_id": "BASE-01",
-  "timeout_minutes": 2
-}
-```
-
-This persists `TriggerStart=1` and optionally updates `TimeOutTrigger`. Devices receive the state through the next upload response or `GET /api/config`.
-
-Reset after completion/cancellation:
-
-```http
-POST /api/v1/blast/reset
-```
-
-```json
-{
-  "base_id": "BASE-01"
-}
-```
-
-For LoRa mode, Base reads the configuration and forwards the trigger/config to rovers over LoRa. For 4G mode, each device can read the same configuration contract over HTTP.
 
 ## Database State
 

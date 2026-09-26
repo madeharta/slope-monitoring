@@ -202,7 +202,7 @@ python -m pytest -q
 Expected:
 
 ```text
-144 passed, 1 skipped
+148 passed, 1 skipped
 ```
 
 ## 3.4 API Environment File
@@ -299,14 +299,16 @@ Never store the plaintext initial password in Git or deployment scripts.
 [ ] PostgreSQL private
 [ ] TimescaleDB installed
 [ ] DB schema current through revision 17
-[ ] python tests pass: 144 passed, 1 skipped
+[ ] full Python test suite passes after the current patch; expected baseline: 148 passed, 1 skipped
 [ ] frontend build succeeds
 [ ] docker compose config succeeds, if Docker deployment
 [ ] API openapi.json responds
 [ ] GET /api/config returns the full config contract
 [ ] battery calibration fields are intentionally configured or explicitly null
 [ ] trigger sets TriggerStart=1
-[ ] reset sets TriggerStart=0
+[ ] TimeOutTrigger remains in minutes (example: timeout_minutes=2 -> TimeOutTrigger=2)
+[ ] blast_trigger_commands.requested_by stores the numeric user ID
+[ ] reset sets TriggerStart=0 without converting/changing TimeOutTrigger
 [ ] duplicate upload still returns HTTP 200 plus config
 [ ] HTTPS/reverse proxy configured
 [ ] ALLOWED_ORIGINS matches public HTTPS origin

@@ -147,8 +147,9 @@ class DeviceConfigRepository:
             for r in battery_rows
         }
         return compose_contract_config(requested, base_config, battery_cal, base_id == device_id)
-    async def set_site_trigger(
+    async def set_site_trigger_on_conn(
         self,
+        conn,
         base_id: str,
         trigger_start: int,
         timeout_minutes: int | None,
@@ -156,35 +157,45 @@ class DeviceConfigRepository:
     ) -> None:
         if trigger_start not in {0, 1}:
             raise ValueError("TriggerStart must be 0 or 1")
+        base = await conn.fetchrow("SELECT device_id FROM devices WHERE device_id = $1", base_id)
+        if base is None:
+            raise NotFoundError("device", base_id)
+        writes = [("TriggerStart", trigger_start)]
+        if timeout_minutes is not None:
+            if timeout_minutes <= 0:
+                raise ValueError("TimeOutTrigger must be greater than 0 minutes")
+            writes.append(("TimeOutTrigger", timeout_minutes))
+        for key, value in writes:
+            await conn.execute(
+                """
+                INSERT INTO device_config (device_id, config_key, config_value, updated_by, updated_at)
+                VALUES ($1, $2, $3, $4, now())
+                ON CONFLICT (device_id, config_key)
+                DO UPDATE SET config_value = EXCLUDED.config_value,
+                              updated_by = EXCLUDED.updated_by,
+                              updated_at = now()
+                """,
+                base_id, key, value, updated_by,
+            )
+            await conn.execute(
+                """
+                INSERT INTO device_config_pending (device_id, config_key, config_value, created_at)
+                VALUES ($1, $2, $3, now())
+                """,
+                base_id, key, value,
+            )
+    async def set_site_trigger(
+        self,
+        base_id: str,
+        trigger_start: int,
+        timeout_minutes: int | None,
+        updated_by: str,
+    ) -> None:
         async with self._pool.acquire() as conn:
-            base = await conn.fetchrow("SELECT device_id FROM devices WHERE device_id = $1", base_id)
-            if base is None:
-                raise NotFoundError("device", base_id)
             async with conn.transaction():
-                writes = [("TriggerStart", trigger_start)]
-                if timeout_minutes is not None:
-                    if timeout_minutes <= 0:
-                        raise ValueError("TimeOutTrigger must be greater than 0 minutes")
-                    writes.append(("TimeOutTrigger", timeout_minutes))
-                for key, value in writes:
-                    await conn.execute(
-                        """
-                        INSERT INTO device_config (device_id, config_key, config_value, updated_by, updated_at)
-                        VALUES ($1, $2, $3, $4, now())
-                        ON CONFLICT (device_id, config_key)
-                        DO UPDATE SET config_value = EXCLUDED.config_value,
-                                      updated_by = EXCLUDED.updated_by,
-                                      updated_at = now()
-                        """,
-                        base_id, key, value, updated_by,
-                    )
-                    await conn.execute(
-                        """
-                        INSERT INTO device_config_pending (device_id, config_key, config_value, created_at)
-                        VALUES ($1, $2, $3, now())
-                        """,
-                        base_id, key, value,
-                    )
+                await self.set_site_trigger_on_conn(
+                    conn, base_id, trigger_start, timeout_minutes, updated_by
+                )
     async def ack_pending(self, device_id: str, config_key: str, acked_at: datetime) -> None:
         async with self._pool.acquire() as conn:
             await conn.execute(
