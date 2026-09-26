@@ -20,6 +20,14 @@ _CONTRACT_KEYS = {
 }
 _BATTERY_KEYS = {"battery_cal_m", "battery_cal_c"}
 _GLOBAL_KEYS = {"TriggerStart", "TimeOutTrigger"}
+_CONTRACT_BATTERY_DEVICE_IDS = {"BASE-01", "ROVER-B1-01", "ROVER-B1-02"}
+def _compose_battery_cal(rows) -> dict[str, dict[str, float | None]]:
+    result = {device_id: {"m": None, "c": None} for device_id in sorted(_CONTRACT_BATTERY_DEVICE_IDS)}
+    for row in rows:
+        device_id = row["device_id"]
+        if device_id in result:
+            result[device_id] = {"m": row["battery_cal_m"], "c": row["battery_cal_c"]}
+    return result
 def _default_config() -> dict[str, Any]:
     return {
         "periodic_upload_s": int(os.getenv("DEVICE_DEFAULT_PERIODIC_UPLOAD_S", "300")),
@@ -142,10 +150,7 @@ class DeviceConfigRepository:
             )
         requested = {r["config_key"]: r["config_value"] for r in requested_rows}
         base_config = {r["config_key"]: r["config_value"] for r in base_rows}
-        battery_cal = {
-            r["device_id"]: {"m": r["battery_cal_m"], "c": r["battery_cal_c"]}
-            for r in battery_rows
-        }
+        battery_cal = _compose_battery_cal(battery_rows)
         return compose_contract_config(requested, base_config, battery_cal, base_id == device_id)
     async def set_site_trigger_on_conn(
         self,

@@ -4,7 +4,7 @@
 Validated against the synchronized source package dated 25 September 2026:
 
 ```text
-148 passed, 1 skipped
+152 passed, 1 skipped
 Python compile validation: OK
 ```
 
@@ -83,7 +83,7 @@ Every successful upload, including an idempotent duplicate, returns the same con
 
 ## Database State
 
-Fresh database bootstrap in `docker/initdb/001_full_schema.sql` is synchronized through revision 17.
+Fresh database bootstrap in `docker/initdb/001_full_schema.sql` is synchronized through revision 18.
 
 ## Environment
 
@@ -138,7 +138,7 @@ python -m pytest -q
 Expected baseline dated 25 September 2026:
 
 ```text
-144 passed, 1 skipped
+152 passed, 1 skipped
 ```
 
 Frontend:

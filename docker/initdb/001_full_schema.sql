@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS device_config_pending_unacked
 CREATE TABLE IF NOT EXISTS file_uploads (
     file_name       TEXT PRIMARY KEY,
     device_id       TEXT REFERENCES devices(device_id),
-    data_type       TEXT NOT NULL CHECK (data_type IN ('gnss', 'position', 'accel')),
+    data_type       TEXT NOT NULL CHECK (data_type IN ('gnss', 'accel')),
     upload_origin   TEXT NOT NULL DEFAULT 'device_auto'
                      CHECK (upload_origin IN ('device_auto', 'manual_technician')),
     sequence_number INTEGER,
@@ -411,5 +411,5 @@ COMMENT ON COLUMN measurements.validation_status IS
 CREATE TABLE IF NOT EXISTS schema_bootstrap_version (
   version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-INSERT INTO schema_bootstrap_version(version) VALUES (17) ON CONFLICT (version) DO NOTHING;
+INSERT INTO schema_bootstrap_version(version) VALUES (18) ON CONFLICT (version) DO NOTHING;
 COMMIT;
