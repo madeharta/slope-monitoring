@@ -1,10 +1,10 @@
 # Slope Landslide Monitoring
 ## Current QA Baseline
 
-Validated against the synchronized source package dated 25 September 2026:
+Validated against the synchronized source package dated 27 September 2026:
 
 ```text
-152 passed, 1 skipped
+165 passed, 1 skipped
 Python compile validation: OK
 ```
 
@@ -102,6 +102,9 @@ ALLOWED_ORIGINS
 RTKLIB_CONVBIN_PATH
 RTKLIB_RNX2RTKP_PATH
 RTKLIB_NAV_FILE
+RINEX_CACHE_DIR
+RINEX_DOWNLOAD_TIMEOUT_S
+RINEX_DOWNLOAD_MAX_BYTES
 MEASUREMENTS_RETENTION_DAYS
 MFA_ENFORCEMENT_ENABLED
 WEATHER_POLLING_ENABLED
@@ -135,10 +138,10 @@ Backend:
 python -m pytest -q
 ```
 
-Expected baseline dated 25 September 2026:
+Expected baseline dated 27 September 2026:
 
 ```text
-152 passed, 1 skipped
+165 passed, 1 skipped
 ```
 
 Frontend:

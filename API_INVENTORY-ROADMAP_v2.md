@@ -130,12 +130,14 @@ The current integration workstream is focused on:
 
 | Work Item | Current State |
 |---|---|
-| Config/trigger end-to-end smoke validation | In progress — config endpoint is verified; final parity checks cover normal upload, duplicate upload, and trigger lifecycle |
+| Config/trigger end-to-end smoke validation | Verified in staging — trigger sets `TriggerStart=1`, `TimeOutTrigger` remains in minutes, numeric requester ledger is written, and reset returns `TriggerStart=0`. |
 | 4G Rover GNSS acceptance | Waiting for real-device/sample validation |
 | LoRa combined GNSS acceptance | Waiting for updated ITB field file |
 | LoRa accel acceptance | Waiting for updated ITB field file |
 | 4G blast accel acceptance | Waiting for updated ITB field file matching the latest one-RAWX rule |
-| API documentation synchronization | Ongoing — this inventory and Swagger/OpenAPI are maintained with implementation changes |
+| Current upload/device contract cleanup | Verified in staging. Device config inventory is `BASE-01`, `ROVER-B1-01`, `ROVER-B1-02`; production upload types are `gnss | accel`. |
+| RINEX acquisition/cache preparation | Implemented as an operational utility using authorized SRGI BIG downloads; automatic PPK integration is pending. |
+| API documentation synchronization | Ongoing — Swagger/OpenAPI remains the reference for deployed routes/schemas, while this inventory tracks readiness/current work/pending acceptance. |
 
 ---
 
@@ -146,7 +148,7 @@ The following items are not yet considered fully production-qualified:
 | Pending Item | Target |
 |---|---|
 | Real-file acceptance for remaining 4G/LoRa flows | Validate actual field/device files against the implemented upload contract |
-| RINEX acquisition for PPK | Integrate server-side navigation/ephemeris retrieval using the agreed RINEX source |
+| RINEX acquisition for PPK | Authorized SRGI BIG RINEX caching utility implemented; automatic station/time selection and PPK execution integration remain pending |
 | Production PPK processing | Complete RTKLIB window/multi-epoch processing and quality handling |
 | Baseline/displacement operational qualification | Validate approved baseline and displacement processing before operational use |
 | Accel-derived PPA/PPV operational validation | Validate processing using accepted blast datasets |

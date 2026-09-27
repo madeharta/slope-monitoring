@@ -36,6 +36,9 @@ services:
       RTKLIB_CONVBIN_PATH: /usr/local/bin/convbin
       RTKLIB_RNX2RTKP_PATH: /usr/local/bin/rnx2rtkp
       RTKLIB_NAV_FILE: ${RTKLIB_NAV_FILE:-}
+      RINEX_CACHE_DIR: ${RINEX_CACHE_DIR:-/var/lib/slope-monitoring/rinex}
+      RINEX_DOWNLOAD_TIMEOUT_S: ${RINEX_DOWNLOAD_TIMEOUT_S:-60}
+      RINEX_DOWNLOAD_MAX_BYTES: ${RINEX_DOWNLOAD_MAX_BYTES:-262144000}
       MEASUREMENTS_RETENTION_DAYS: ${MEASUREMENTS_RETENTION_DAYS:-730}
       MFA_ENFORCEMENT_ENABLED: ${MFA_ENFORCEMENT_ENABLED:-true}
       WEATHER_POLLING_ENABLED: ${WEATHER_POLLING_ENABLED:-false}
@@ -45,6 +48,8 @@ services:
       DEVICE_DEFAULT_TIME_RECORD_MS: ${DEVICE_DEFAULT_TIME_RECORD_MS:-2000}
       DEVICE_DEFAULT_TRIGGER_START: ${DEVICE_DEFAULT_TRIGGER_START:-0}
       DEVICE_DEFAULT_TIMEOUT_TRIGGER: ${DEVICE_DEFAULT_TIMEOUT_TRIGGER:-300}
+    volumes:
+      - rinex_cache:${RINEX_CACHE_DIR:-/var/lib/slope-monitoring/rinex}
     ports:
       - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     healthcheck:
@@ -70,3 +75,4 @@ services:
       retries: 10
 volumes:
   db_data:
+  rinex_cache:

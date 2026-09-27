@@ -57,7 +57,12 @@ ALLOWED_ORIGINS=https://monitoring.example.com
 DB_HOST_PORT=5433
 API_HOST_PORT=8000
 FRONTEND_HOST_PORT=5173
+RTKLIB_CONVBIN_PATH
+RTKLIB_RNX2RTKP_PATH
 RTKLIB_NAV_FILE=
+RINEX_CACHE_DIR
+RINEX_DOWNLOAD_TIMEOUT_S
+RINEX_DOWNLOAD_MAX_BYTES
 MEASUREMENTS_RETENTION_DAYS=730
 MFA_ENFORCEMENT_ENABLED=true
 WEATHER_POLLING_ENABLED=false
@@ -167,7 +172,7 @@ psql -v ON_ERROR_STOP=1 \
   -f docker/initdb/001_full_schema.sql
 ```
 
-Current bootstrap already includes revision 17.
+Current bootstrap already includes revision 18.
 
 For an existing staging database previously migrated through 016:
 
@@ -202,10 +207,18 @@ python -m pytest -q
 Expected:
 
 ```text
-152 passed, 1 skipped
+165 passed, 1 skipped
 ```
 
-## 3.4 API Environment File
+## 3.4 RINEX Cache Directory
+
+Create a persistent runtime directory owned by the API service user:
+
+```bash
+sudo install -d -o slope-monitor -g slope-monitor -m 0750 /var/lib/slope-monitoring/rinex
+```
+
+## 3.5 API Environment File
 
 Create an OS-owned file, for example `/etc/slope-monitoring/api.env`:
 
@@ -220,6 +233,9 @@ ALLOWED_ORIGINS=https://monitoring.example.com
 RTKLIB_CONVBIN_PATH=/usr/local/bin/convbin
 RTKLIB_RNX2RTKP_PATH=/usr/local/bin/rnx2rtkp
 RTKLIB_NAV_FILE=
+RINEX_CACHE_DIR=/var/lib/slope-monitoring/rinex
+RINEX_DOWNLOAD_TIMEOUT_S=60
+RINEX_DOWNLOAD_MAX_BYTES=262144000
 MEASUREMENTS_RETENTION_DAYS=730
 MFA_ENFORCEMENT_ENABLED=true
 WEATHER_POLLING_ENABLED=false
@@ -236,7 +252,7 @@ sudo chown root:root /etc/slope-monitoring/api.env
 sudo chmod 600 /etc/slope-monitoring/api.env
 ```
 
-## 3.5 systemd Unit
+## 3.6 systemd Unit
 
 ```ini
 [Unit]
@@ -272,7 +288,7 @@ Smoke test:
 curl -fsS http://127.0.0.1:8000/openapi.json >/dev/null
 ```
 
-## 3.6 Frontend
+## 3.7 Frontend
 
 ```bash
 cd apps/frontend
@@ -299,7 +315,9 @@ Never store the plaintext initial password in Git or deployment scripts.
 [ ] PostgreSQL private
 [ ] TimescaleDB installed
 [ ] DB schema current through revision 18
-[ ] full Python test suite passes: 152 passed, 1 skipped
+[ ] RINEX cache directory/volume is persistent and not tracked in Git
+[ ] SRGI acquisition workflow uses authorized portal/download access
+[ ] full Python test suite passes: 165 passed, 1 skipped
 [ ] frontend build succeeds
 [ ] docker compose config succeeds, if Docker deployment
 [ ] API openapi.json responds
