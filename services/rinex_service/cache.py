@@ -62,13 +62,26 @@ class RINEXCache:
                 source_url=manifest.get("source_url"),
             )
         self._atomic_write(artifact_path, content)
+        metadata_value = dict(metadata or {})
+        try:
+            from services.rinex_service.normalizer import RINEXNormalizationError
+            from services.rinex_service.parser import RINEXParseError, parse_rinex_bytes
+            metadata_value["rinex"] = parse_rinex_bytes(content, original_name=file_name).to_manifest_dict()
+        except RINEXNormalizationError as exc:
+            try:
+                artifact_path.unlink()
+            except FileNotFoundError:
+                pass
+            raise RINEXCacheError(f"unsafe compressed RINEX artifact: {exc}") from exc
+        except RINEXParseError:
+            pass
         manifest = {
             "sha256": digest,
             "size_bytes": len(content),
             "original_name": file_name,
             "source_url": source_url,
             "stored_at_utc": datetime.now(timezone.utc).isoformat(),
-            "metadata": metadata or {},
+            "metadata": metadata_value,
         }
         self._atomic_write(
             manifest_path,

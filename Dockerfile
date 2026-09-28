@@ -8,7 +8,7 @@ RUN make -C RTKLIB/app/convbin/gcc \
     && make -C RTKLIB/app/rnx2rtkp/gcc
 FROM python:3.11-slim AS app
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
+    libgomp1 gzip \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rtklib-builder /build/RTKLIB/app/convbin/gcc/convbin /usr/local/bin/convbin
 COPY --from=rtklib-builder /build/RTKLIB/app/rnx2rtkp/gcc/rnx2rtkp /usr/local/bin/rnx2rtkp

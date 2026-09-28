@@ -4,7 +4,7 @@
 Validated against the synchronized source package dated 27 September 2026:
 
 ```text
-165 passed, 1 skipped
+192 passed, 1 skipped
 Python compile validation: OK
 ```
 
@@ -29,6 +29,7 @@ data/db/migrations/        incremental DB migrations
 docker/initdb/             fresh DB bootstrap
 ml/                        preprocessing/evaluation/model modules
 services/                  application/domain repositories and services
+services/rinex_service/    RINEX parser, NAV resolver, SRGI guard, and content-addressed cache
 tests/                     automated tests
 Dockerfile                 API + RTKLIB image
 docker-compose.yml         application stack
@@ -141,7 +142,7 @@ python -m pytest -q
 Expected baseline dated 27 September 2026:
 
 ```text
-165 passed, 1 skipped
+192 passed, 1 skipped
 ```
 
 Frontend:

@@ -136,7 +136,7 @@ The current integration workstream is focused on:
 | LoRa accel acceptance | Waiting for updated ITB field file |
 | 4G blast accel acceptance | Waiting for updated ITB field file matching the latest one-RAWX rule |
 | Current upload/device contract cleanup | Verified in staging. Device config inventory is `BASE-01`, `ROVER-B1-01`, `ROVER-B1-02`; production upload types are `gnss | accel`. |
-| RINEX acquisition/cache preparation | Implemented as an operational utility using authorized SRGI BIG downloads; automatic PPK integration is pending. |
+| RINEX acquisition/cache + NAV resolution | Implemented. Selection is content-first, uses the GNSS observation UTC date, supports optional exact station filtering, and rejects observation data from NAV selection. Compressed-input hardening is in the current candidate release; staging acceptance is pending. |
 | API documentation synchronization | Ongoing — Swagger/OpenAPI remains the reference for deployed routes/schemas, while this inventory tracks readiness/current work/pending acceptance. |
 
 ---
@@ -148,7 +148,7 @@ The following items are not yet considered fully production-qualified:
 | Pending Item | Target |
 |---|---|
 | Real-file acceptance for remaining 4G/LoRa flows | Validate actual field/device files against the implemented upload contract |
-| RINEX acquisition for PPK | Authorized SRGI BIG RINEX caching utility implemented; automatic station/time selection and PPK execution integration remain pending |
+| RINEX acquisition for PPK | Authorized SRGI BIG cache import and automatic cached NAV selection are implemented. .gz/.Z transport hardening and CompactRINEX observation detection are implemented in the current candidate; field acceptance of additional compressed formats remains pending. Direct SRGI portal automation is not used because the portal has interactive authentication/CAPTCHA. |
 | Production PPK processing | Complete RTKLIB window/multi-epoch processing and quality handling |
 | Baseline/displacement operational qualification | Validate approved baseline and displacement processing before operational use |
 | Accel-derived PPA/PPV operational validation | Validate processing using accepted blast datasets |

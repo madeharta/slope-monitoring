@@ -179,7 +179,7 @@ For an existing staging database previously migrated through 016:
 ```bash
 psql -v ON_ERROR_STOP=1 \
   -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  -f data/db/migrations/017_device_config_contract.sql
+  -f data/db/migrations/018_current_upload_contract.sql
 ```
 
 ## 3.2 RTKLIB
@@ -207,7 +207,7 @@ python -m pytest -q
 Expected:
 
 ```text
-165 passed, 1 skipped
+192 passed, 1 skipped
 ```
 
 ## 3.4 RINEX Cache Directory
@@ -218,24 +218,37 @@ Create a persistent runtime directory owned by the API service user:
 sudo install -d -o slope-monitor -g slope-monitor -m 0750 /var/lib/slope-monitoring/rinex
 ```
 
+Set the native environment file to include:
+
+```dotenv
+RINEX_CACHE_DIR=/var/lib/slope-monitoring/rinex
+RINEX_DOWNLOAD_TIMEOUT_S=60
+RINEX_DOWNLOAD_MAX_BYTES=262144000
+RINEX_DECOMPRESS_MAX_BYTES=536870912
+RINEX_DECOMPRESS_MAX_RATIO=100
+RINEX_DECOMPRESS_TIMEOUT_S=30
+```
+
 ## 3.5 API Environment File
 
 Create an OS-owned file, for example `/etc/slope-monitoring/api.env`:
 
 ```dotenv
-DB_HOST=127.0.0.1
-DB_PORT=5432
 DB_NAME=slope_iot
 DB_USER=slope
-DB_PASSWORD=<secret>
-JWT_SECRET_KEY=<secret>
+DB_PASSWORD=<strong-random-password>
+JWT_SECRET_KEY=<random-64-hex-secret>
 ALLOWED_ORIGINS=https://monitoring.example.com
-RTKLIB_CONVBIN_PATH=/usr/local/bin/convbin
-RTKLIB_RNX2RTKP_PATH=/usr/local/bin/rnx2rtkp
+DB_HOST_PORT=5433
+API_HOST_PORT=8000
+FRONTEND_HOST_PORT=5173
 RTKLIB_NAV_FILE=
 RINEX_CACHE_DIR=/var/lib/slope-monitoring/rinex
 RINEX_DOWNLOAD_TIMEOUT_S=60
 RINEX_DOWNLOAD_MAX_BYTES=262144000
+RINEX_DECOMPRESS_MAX_BYTES=536870912
+RINEX_DECOMPRESS_MAX_RATIO=100
+RINEX_DECOMPRESS_TIMEOUT_S=30
 MEASUREMENTS_RETENTION_DAYS=730
 MFA_ENFORCEMENT_ENABLED=true
 WEATHER_POLLING_ENABLED=false
@@ -317,7 +330,7 @@ Never store the plaintext initial password in Git or deployment scripts.
 [ ] DB schema current through revision 18
 [ ] RINEX cache directory/volume is persistent and not tracked in Git
 [ ] SRGI acquisition workflow uses authorized portal/download access
-[ ] full Python test suite passes: 165 passed, 1 skipped
+[ ] full Python test suite passes: 192 passed, 1 skipped
 [ ] frontend build succeeds
 [ ] docker compose config succeeds, if Docker deployment
 [ ] API openapi.json responds
