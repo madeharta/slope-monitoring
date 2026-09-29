@@ -31,6 +31,26 @@ class RawStagingRepository:
                 """,
                 values,
             )
+
+    async def get_gnss_window(
+        self, device_id: str, start_time: datetime, end_time: datetime,
+    ) -> list[tuple[datetime, bytes, str]]:
+        import base64
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT time, raw_payload_base64, file_name
+                FROM gnss_raw_samples
+                WHERE device_id = $1 AND time >= $2 AND time <= $3
+                ORDER BY time ASC
+                """,
+                device_id, start_time, end_time,
+            )
+        return [
+            (row["time"], base64.b64decode(row["raw_payload_base64"]), row["file_name"])
+            for row in rows
+        ]
+
     async def find_nearest_base_epoch(
         self, base_device_id: str, target_time: datetime, tolerance: timedelta = DEFAULT_EPOCH_TOLERANCE,
     ) -> tuple[datetime, bytes] | None:

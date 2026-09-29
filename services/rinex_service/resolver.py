@@ -23,7 +23,7 @@ class RINEXNavigationResolver:
     def resolve(self, observed_at: datetime, *, station: str | None = None) -> ResolvedNavigation:
         timestamp = _as_utc(observed_at)
         station_key = station.strip().upper() if station else None
-        candidates: list[tuple[tuple[int, int, str], ResolvedNavigation]] = []
+        candidates: list[tuple[tuple[int, int, int, str], ResolvedNavigation]] = []
         for manifest_path in sorted(self.cache.root.glob("*/*/manifest.json")):
             digest = manifest_path.parent.name
             try:
@@ -35,11 +35,12 @@ class RINEXNavigationResolver:
                 continue
             if metadata.nominal_date != timestamp.date():
                 continue
-            if station_key is not None and metadata.station != station_key:
+            if station_key is not None and metadata.station not in {None, station_key}:
                 continue
             mixed_bonus = int(metadata.constellation == "MIXED")
             station_bonus = int(station_key is not None and metadata.station == station_key)
-            score = (station_bonus, mixed_bonus, artifact.sha256)
+            global_bonus = int(metadata.station is None)
+            score = (station_bonus, global_bonus, mixed_bonus, artifact.sha256)
             candidates.append((score, ResolvedNavigation(artifact=artifact, metadata=metadata)))
         if not candidates:
             label = f" for station {station_key}" if station_key else ""

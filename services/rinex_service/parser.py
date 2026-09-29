@@ -248,7 +248,8 @@ def _infer_from_filename(name: str | None) -> tuple[str | None, date | None, str
         nominal = datetime.strptime(
             f"{long_match.group('year')}-{long_match.group('doy')}", "%Y-%j"
         ).date()
-        station = basename.split("_", 1)[0][:4].upper() or None
+        prefix = basename.split("_", 1)[0].upper()
+        station = None if prefix.startswith(("BRDC", "BRDM", "BRD4")) else prefix[:4] or None
         upper = basename.upper()
         data_type = "navigation" if "_MN." in upper or "_GN." in upper else "observation" if "_MO." in upper or "_GO." in upper else None
         return station, nominal, data_type

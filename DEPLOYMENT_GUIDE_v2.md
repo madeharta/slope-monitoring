@@ -207,7 +207,7 @@ python -m pytest -q
 Expected:
 
 ```text
-192 passed, 1 skipped
+203 passed, 1 skipped
 ```
 
 ## 3.4 RINEX Cache Directory
@@ -215,13 +215,13 @@ Expected:
 Create a persistent runtime directory owned by the API service user:
 
 ```bash
-sudo install -d -o slope-monitor -g slope-monitor -m 0750 /var/lib/slope-monitoring/rinex
+sudo install -d -o slope-monitor -g slope-monitor -m 0750 /data/rinex-cache
 ```
 
 Set the native environment file to include:
 
 ```dotenv
-RINEX_CACHE_DIR=/var/lib/slope-monitoring/rinex
+RINEX_CACHE_DIR=/data/rinex-cache
 RINEX_DOWNLOAD_TIMEOUT_S=60
 RINEX_DOWNLOAD_MAX_BYTES=262144000
 RINEX_DECOMPRESS_MAX_BYTES=536870912
@@ -243,7 +243,7 @@ DB_HOST_PORT=5433
 API_HOST_PORT=8000
 FRONTEND_HOST_PORT=5173
 RTKLIB_NAV_FILE=
-RINEX_CACHE_DIR=/var/lib/slope-monitoring/rinex
+RINEX_CACHE_DIR=/data/rinex-cache
 RINEX_DOWNLOAD_TIMEOUT_S=60
 RINEX_DOWNLOAD_MAX_BYTES=262144000
 RINEX_DECOMPRESS_MAX_BYTES=536870912
@@ -327,10 +327,10 @@ Never store the plaintext initial password in Git or deployment scripts.
 [ ] environment-specific DB/JWT secrets generated
 [ ] PostgreSQL private
 [ ] TimescaleDB installed
-[ ] DB schema current through revision 18
+[ ] DB schema current through revision 19
 [ ] RINEX cache directory/volume is persistent and not tracked in Git
 [ ] SRGI acquisition workflow uses authorized portal/download access
-[ ] full Python test suite passes: 192 passed, 1 skipped
+[ ] full Python test suite passes: 213 passed, 1 skipped
 [ ] frontend build succeeds
 [ ] docker compose config succeeds, if Docker deployment
 [ ] API openapi.json responds
@@ -377,3 +377,36 @@ docker compose logs --tail=200 api
 ```
 
 Do not use `docker compose down -v` during normal upgrades because it removes the database volume.
+
+## Automatic Public Broadcast Navigation
+
+The application includes an outbound-only public broadcast-ephemeris acquisition layer. It checks the persistent RINEX cache first, then attempts the BKG WRD merged broadcast-navigation product, the IGS merged product mirrored at BKG, and CDDIS IGS as a final public fallback. Only HTTPS on each provider's exact configured host is accepted; cross-host redirects, embedded credentials, non-standard ports, HTML responses, empty responses, oversized transfers, non-navigation RINEX, and a mismatched UTC date are rejected.
+Required production egress should therefore be limited to the exact provider hosts used by the deployment. No inbound port is added. SRGI portal automation is still intentionally excluded.
+
+Smoke test after deployment:
+
+```bash
+python -m scripts.fetch_rinex_nav --timestamp '2026-09-25T12:00:00Z' --station CLBG
+```
+
+For a cached date, expect cache_hit: true. For an uncached date with outbound Internet access, expect a validated public provider name and a cached RINEX NAV artifact. Live provider availability must be acceptance-tested from the deployment environment because CI/unit tests use mocked HTTP transports.
+
+## RTKLIB Window PPK Upgrade
+
+Apply database migrations through revision 19 before enabling PPK window processing. Migration 019 adds an explicit vertical datum to the surveyed base reference and restricts new rover baselines to ELLIPSOIDAL_WGS84.
+
+The PPK pipeline requires convbin and rnx2rtkp in the API runtime. Automatic broadcast navigation continues to use RINEX_CACHE_DIR; compressed public NAV is decompressed into an ephemeral work directory before it is passed to RTKLIB.
+
+### Additional upgrade acceptance:
+```text
+[ ] DB schema current through revision 19
+[ ] BASE-01 device_reference_position.vertical_datum = ELLIPSOIDAL_WGS84 after survey confirmation
+[ ] each production rover baseline vertical_datum = ELLIPSOIDAL_WGS84
+[ ] config/rtklib_ppk.conf is deployed and readable
+[ ] convbin is executable
+[ ] rnx2rtkp is executable
+[ ] RINEX cache is persistent
+[ ] automatic NAV acquisition/cache hit works
+[ ] full backend suite passes: 213 passed, 1 skipped
+[ ] paired BASE/ROVER production RAWX field acceptance completed before scientific accuracy claims
+```

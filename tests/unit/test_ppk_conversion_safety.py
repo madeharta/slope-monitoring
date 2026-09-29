@@ -34,11 +34,13 @@ def test_corrupt_ubx_is_rejected(tmp_path):
         writer.writerow(['ROVER-01','2026-09-18 12:25:27',base64.b64encode(b'\xb5\x62\x02\x15\x00\x00\x00\x00').decode()])
     with pytest.raises(ConversionError, match='Invalid UBX'):
         read_rawx(source)
-def test_ppk_engine_requires_nav_even_if_convbin_was_successful(tmp_path):
+def test_ppk_engine_requires_nav_before_solver(tmp_path):
+    from datetime import datetime, timezone
     engine = RTKLibPPKEngine(-6, 107, 100)
     with pytest.raises(PPKSolveError, match='RINEX navigation'):
-        engine._run_rnx2rtkp(tmp_path/'rover.obs', tmp_path/'base.obs', tmp_path/'out.pos')
-def test_ppk_command_uses_l_not_b_and_has_nav(monkeypatch, tmp_path):
+        engine._prepare_navigation(datetime(2026, 9, 15, tzinfo=timezone.utc), tmp_path, station=None)
+
+def test_ppk_command_uses_l_not_b_and_has_plain_nav(monkeypatch, tmp_path):
     nav = tmp_path / 'nav.rnx'
     nav.write_text('test NAV fixture, not real ephemeris')
     engine = RTKLibPPKEngine(-6, 107, 100, nav_file=str(nav))
@@ -48,10 +50,11 @@ def test_ppk_command_uses_l_not_b_and_has_nav(monkeypatch, tmp_path):
         (tmp_path/'result.pos').write_text('mocked only')
         return SimpleNamespace(returncode=0, stderr='')
     monkeypatch.setattr(engine, '_run_subprocess', fake_run)
-    engine._run_rnx2rtkp(tmp_path/'rover.obs', tmp_path/'base.obs', tmp_path/'result.pos')
+    engine._run_rnx2rtkp(tmp_path/'rover.obs', tmp_path/'base.obs', nav, tmp_path/'result.pos')
     assert '-l' in command and '-b' not in command
     assert command[command.index('-l')+1:command.index('-l')+4] == ['-6','107','100']
     assert command[-1] == str(nav)
+
 @pytest.mark.asyncio
 async def test_no_rover_baseline_suppresses_unsafe_displacement():
     rows = parse_combined_gnss_csv(
@@ -76,7 +79,7 @@ async def test_approved_rover_baseline_zero_at_initial_position():
     ).position_rows
     service = CanonicalizationService(None, lambda _: None)
     service._devices.get_site_id = AsyncMock(return_value='SITE-A')
-    service._rover_baselines.get = AsyncMock(return_value=SimpleNamespace(latitude=-6.2, longitude=106.8, altitude_m=500, vertical_datum='MSL_CONFIRMED', max_h_acc_m=0.1))
+    service._rover_baselines.get = AsyncMock(return_value=SimpleNamespace(latitude=-6.2, longitude=106.8, altitude_m=500, vertical_datum='ELLIPSOIDAL_WGS84', max_h_acc_m=0.1))
     service._measurements.write_displacement = AsyncMock()
     await service.handle_position_rows('BASE-01', rows)
     assert service._measurements.write_displacement.await_args.kwargs['total_mm'] == 0.0

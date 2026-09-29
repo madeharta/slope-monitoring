@@ -18,7 +18,7 @@ async def test_base_aggregated_position_is_attributed_to_each_rover():
     service._devices.get_site_id = AsyncMock(return_value="SITE-A")
     service._devices.get_base_device_id_for_site = AsyncMock(return_value="BASE-01")
     service._reference.get = AsyncMock(return_value=SimpleNamespace(latitude=-6.2, longitude=106.8, altitude_m=500))
-    service._rover_baselines.get = AsyncMock(return_value=SimpleNamespace(latitude=-6.2, longitude=106.8, altitude_m=500, vertical_datum="MSL_CONFIRMED", max_h_acc_m=0.1))
+    service._rover_baselines.get = AsyncMock(return_value=SimpleNamespace(latitude=-6.2, longitude=106.8, altitude_m=500, vertical_datum="ELLIPSOIDAL_WGS84", max_h_acc_m=0.1))
     service._measurements.write_displacement = AsyncMock()
     await service.handle_position_rows("BASE-01", rows)
     assert [call.kwargs["device_id"] for call in service._measurements.write_displacement.await_args_list] == ["ROVER-01", "ROVER-02"]

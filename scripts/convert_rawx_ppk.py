@@ -9,6 +9,8 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 from scripts.prepare_itb_uploads import ubx_valid
+from ml.pipeline.preprocessing.ppk_engine import PPKSolveError, parse_pos_file
+from services.rinex_service.normalizer import normalize_rinex_transport
 class ConversionError(ValueError):
     pass
 def read_rawx(path: Path) -> tuple[str, bytes, dict]:
@@ -109,14 +111,30 @@ def execute(input_path: Path, output_dir: Path, base_input: Path | None = None,
                 manifest["ppk"] = "NOT_RUN_RNX2RTKP_MISSING"
             else:
                 lat, lon, alt = base_coords
+                nav_plain = output_dir / "navigation.rnx"
+                try:
+                    nav_content = normalize_rinex_transport(nav.read_bytes()).content
+                except Exception as exc:
+                    raise ConversionError(f"Unable to materialize RINEX NAV: {exc}") from exc
+                nav_plain.write_bytes(nav_content)
                 pos = output_dir / "solution.pos"
                 invoke([solver, "-p", "2", "-l", str(lat), str(lon), str(alt),
-                        "-o", str(pos), str(rover_obs), str(base_obs), str(nav)], pos, "rnx2rtkp")
-                solutions = [line for line in pos.read_text().splitlines() if line.strip() and not line.startswith("%")]
-                if not solutions:
-                    raise ConversionError("RTKLIB emitted no position epochs")
+                        "-o", str(pos), str(rover_obs), str(base_obs), str(nav_plain)], pos, "rnx2rtkp")
+                try:
+                    solutions = parse_pos_file(pos)
+                except PPKSolveError as exc:
+                    raise ConversionError(str(exc)) from exc
+                quality_counts = Counter(solution.rtklib_quality for solution in solutions)
                 manifest["mode"] = "PPK_OUTPUT_UNVALIDATED"
-                manifest["ppk"] = f"{len(solutions)} position lines; require independent QC and benchmark"
+                manifest["ppk"] = {
+                    "solution_epochs": len(solutions),
+                    "first_solution_utc": solutions[0].timestamp_utc.isoformat(),
+                    "last_solution_utc": solutions[-1].timestamp_utc.isoformat(),
+                    "rtklib_quality_counts": {str(k): v for k, v in sorted(quality_counts.items())},
+                    "max_h_acc_m": max(solution.h_acc_m for solution in solutions),
+                    "nav_sha256": hashlib.sha256(nav.read_bytes()).hexdigest(),
+                    "note": "RTKLIB output parsed; independent field accuracy validation still required",
+                }
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 def main() -> None:

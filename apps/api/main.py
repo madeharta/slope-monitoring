@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from apps.api.middlewares.error_handler import register_error_handlers
 from apps.api.routers.v1 import auth, blast, dashboard, device_config, devices_and_audit, ingest, model_ops, sites, users, weather
 from ml.pipeline.preprocessing.ppk_engine import RTKLibPPKEngine
+from services.rinex_service.acquisition import RINEXNavigationAcquisition
+from services.rinex_service.cache import RINEXCache
 from ml.registry.model_registry import ModelRegistry
 load_dotenv()
 async def _init_connection(conn: asyncpg.Connection) -> None:
@@ -29,6 +31,8 @@ async def lifespan(app: FastAPI):
         init=_init_connection,
     )
     app.state.model_registry = ModelRegistry()
+    rinex_cache = RINEXCache(os.getenv("RINEX_CACHE_DIR", "/data/rinex-cache"))
+    nav_acquisition = RINEXNavigationAcquisition(rinex_cache)
     app.state.ppk_engine_factory = lambda base_reference: RTKLibPPKEngine(
         base_reference_lat=base_reference.latitude,
         base_reference_lon=base_reference.longitude,
@@ -36,6 +40,8 @@ async def lifespan(app: FastAPI):
         convbin_path=os.getenv("RTKLIB_CONVBIN_PATH", "convbin"),
         rnx2rtkp_path=os.getenv("RTKLIB_RNX2RTKP_PATH", "rnx2rtkp"),
         nav_file=os.getenv("RTKLIB_NAV_FILE") or None,
+        navigation_acquisition=nav_acquisition,
+        rtklib_config_file=os.getenv("RTKLIB_CONFIG_FILE", "config/rtklib_ppk.conf"),
     )
     weather_task = None
     if os.getenv("WEATHER_POLLING_ENABLED", "false").lower() == "true":

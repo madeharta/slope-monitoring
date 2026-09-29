@@ -4,7 +4,7 @@
 Validated against the synchronized source package dated 27 September 2026:
 
 ```text
-192 passed, 1 skipped
+213 passed, 1 skipped
 Python compile validation: OK
 ```
 
@@ -84,7 +84,7 @@ Every successful upload, including an idempotent duplicate, returns the same con
 
 ## Database State
 
-Fresh database bootstrap in `docker/initdb/001_full_schema.sql` is synchronized through revision 18.
+Fresh database bootstrap in `docker/initdb/001_full_schema.sql` is synchronized through revision 19.
 
 ## Environment
 
@@ -102,19 +102,25 @@ JWT_SECRET_KEY
 ALLOWED_ORIGINS
 RTKLIB_CONVBIN_PATH
 RTKLIB_RNX2RTKP_PATH
-RTKLIB_NAV_FILE
-RINEX_CACHE_DIR
-RINEX_DOWNLOAD_TIMEOUT_S
-RINEX_DOWNLOAD_MAX_BYTES
-MEASUREMENTS_RETENTION_DAYS
-MFA_ENFORCEMENT_ENABLED
-WEATHER_POLLING_ENABLED
-DEVICE_DEFAULT_PERIODIC_UPLOAD_S
-DEVICE_DEFAULT_FIRMWARE_VERSION
-DEVICE_DEFAULT_THRESHOLD_G
-DEVICE_DEFAULT_TIME_RECORD_MS
-DEVICE_DEFAULT_TRIGGER_START
-DEVICE_DEFAULT_TIMEOUT_TRIGGER
+RTKLIB_NAV_FILE=
+RINEX_CACHE_DIR=/data/rinex-cache
+RINEX_DOWNLOAD_TIMEOUT_S=60
+RINEX_DOWNLOAD_MAX_BYTES=262144000
+RINEX_DECOMPRESS_MAX_BYTES=536870912
+RINEX_DECOMPRESS_MAX_RATIO=100
+RINEX_DECOMPRESS_TIMEOUT_S=30
+DEVICE_DEFAULT_PERIODIC_UPLOAD_S=300
+DEVICE_DEFAULT_FIRMWARE_VERSION=
+DEVICE_DEFAULT_THRESHOLD_G=0.5
+DEVICE_DEFAULT_TIME_RECORD_MS=2000
+DEVICE_DEFAULT_TRIGGER_START=0
+DEVICE_DEFAULT_TIMEOUT_TRIGGER=300
+RTKLIB_CONFIG_FILE=config/rtklib_ppk.conf
+PPK_WINDOW_SECONDS=300
+PPK_WINDOW_PAD_SECONDS=30
+PPK_MIN_EPOCHS=4
+PPK_MAX_H_ACC_M=0.10
+PPK_ACCEPTED_RTKLIB_QUALITY=1
 ```
 
 Generate deployment secrets independently for every environment.
@@ -142,7 +148,7 @@ python -m pytest -q
 Expected baseline dated 27 September 2026:
 
 ```text
-192 passed, 1 skipped
+213 passed, 1 skipped
 ```
 
 Frontend:
@@ -160,3 +166,39 @@ docker compose config
 ```
 
 See `DEPLOYMENT_GUIDE.md` for Docker and native venv/systemd deployment procedures.
+
+## Automatic Public Broadcast Ephemeris Acquisition
+
+The server can now ensure a broadcast-navigation file for an observation UTC timestamp without changing the device payload. The acquisition layer checks the existing content-addressed cache first, then tries public merged RINEX navigation products in deterministic order: BKG WRD, the IGS merged product mirrored by BKG, and the IGS product at CDDIS. Downloaded content is accepted only after HTTPS host validation, bounded transfer, HTML rejection, RINEX parsing, navigation-type validation, and UTC-date validation. Successful artifacts enter the same RINEX cache and NAV resolver used for manually imported SRGI data.
+
+Public BRDC products are treated as global navigation data, not station-specific NAV. An exact station-specific candidate still outranks a global candidate when both are present. This preserves strict rejection of a wrong station when the cache contains only station-specific navigation while allowing merged public BRDC navigation to serve observations from any station.
+
+Manual SRGI import remains supported as a fallback. Device-side ephemeris/SFRBX is not required by this patch and can remain a later contingency. The acquisition service remains separate from the solver internals and is now invoked by the multi-epoch/window PPK job before rnx2rtkp.
+
+CLI example:
+```bash
+python -m scripts.fetch_rinex_nav --timestamp '2026-09-25T12:00:00Z' --station CLBG
+```
+
+A cache hit performs no network request. On a cache miss, the command attempts the configured public providers and stores the validated NAV artifact persistently under RINEX_CACHE_DIR.
+
+## Multi-Epoch RTKLIB PPK Pipeline
+
+The 4G periodic GNSS pipeline now processes overlapping base/rover RAWX observations as a window instead of solving one isolated epoch at a time. Each device stream is ordered and exact duplicate epoch/payload pairs are removed, convbin is run once per stream/window, broadcast navigation is resolved through the cache-first automatic acquisition layer, and rnx2rtkp is run once for the window.
+
+All RTKLIB solution epochs are parsed and retained. RTKLIB quality (Q) remains an RTKLIB-specific field and is not mapped to the u-blox gnss_fix_type. Derived monitoring output can include rtklib_quality, satellite count, age, ambiguity ratio, and standard-deviation components alongside horizontal accuracy.
+
+The base surveyed position and rover displacement baseline must both explicitly use ELLIPSOIDAL_WGS84. Legacy or unconfirmed vertical datums are not silently relabeled and block PPK-derived displacement. Monitoring displacement is computed from the rover solution relative to its approved rover baseline using WGS84 geodetic → ECEF → ENU conversion; the base station is the PPK reference, not the monitoring zero point.
+
+A base upload also attempts reconciliation for rover windows at the same site. This allows rover observations that arrived before the base upload to become processable after the matching base observations arrive. Insufficient windows remain pending instead of being interpolated.
+The version-controlled RTKLIB configuration is config/rtklib_ppk.conf. Public .rnx.gz navigation artifacts are safely materialized to plain RINEX in the temporary RTKLIB work directory before solver execution.
+
+Relevant runtime controls;
+```text
+RTKLIB_CONFIG_FILE=config/rtklib_ppk.conf
+PPK_WINDOW_SECONDS=300
+PPK_WINDOW_PAD_SECONDS=30
+PPK_MIN_EPOCHS=4
+PPK_MAX_H_ACC_M=0.10
+PPK_ACCEPTED_RTKLIB_QUALITY=1
+```

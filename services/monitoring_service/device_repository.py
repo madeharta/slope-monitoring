@@ -17,3 +17,11 @@ class DeviceRepository:
         if row is None:
             raise NotFoundError("gnss_base device for site", site_id)
         return row["device_id"]
+
+    async def get_rover_device_ids_for_site(self, site_id: str) -> list[str]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT device_id FROM devices WHERE site_id = $1 AND device_type = 'gnss_rover' ORDER BY device_id",
+                site_id,
+            )
+        return [row["device_id"] for row in rows]
