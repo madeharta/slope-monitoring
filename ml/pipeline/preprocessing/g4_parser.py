@@ -20,12 +20,28 @@ def parse_gnss_csv(raw_csv: str) -> list[tuple[str, datetime, bytes]]:
         raise InvalidCsvError(f"4G gnss CSV missing required column(s): {sorted(missing)}")
     out: list[tuple[str, datetime, bytes]] = []
     for line_no, row in enumerate(reader, start=2):
+        device_id = (row.get("device_id") or "").strip()
+        timestamp_raw = (row.get("timestamp_utc") or "").strip()
+        payload = (row.get("gnss_raw_payload_base64") or "").strip()
+        if not device_id:
+            raise InvalidCsvError(f"4G gnss line {line_no}: device_id is required")
+        if not timestamp_raw:
+            raise InvalidCsvError(f"4G gnss line {line_no}: timestamp_utc is required")
+        if not payload:
+            raise InvalidCsvError(
+                f"4G gnss line {line_no}: gnss_raw_payload_base64 is required"
+            )
         try:
-            ts = datetime.strptime(row["timestamp_utc"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            ts = datetime.strptime(
+                timestamp_raw,
+                "%Y-%m-%d %H:%M:%S",
+            ).replace(tzinfo=timezone.utc)
         except ValueError as exc:
-            raise InvalidCsvError(f"4G gnss line {line_no}: bad timestamp_utc: {exc}") from exc
-        raw = _decode_ubx(row["gnss_raw_payload_base64"], f"4G gnss line {line_no}")
-        out.append((row["device_id"], ts, raw))
+            raise InvalidCsvError(
+                f"4G gnss line {line_no}: bad timestamp_utc: {exc}"
+            ) from exc
+        raw = _decode_ubx(payload, f"4G gnss line {line_no}")
+        out.append((device_id, ts, raw))
     if not out:
         raise InvalidCsvError("4G gnss CSV contained a header but zero data rows")
     return out
@@ -45,7 +61,7 @@ def parse_accel_csv_single_post_blast_rawx(raw_csv: str) -> G4BlastAccel:
     for line_no, row in enumerate(reader, start=2):
         try:
             ts = datetime.strptime(row["timestamp_utc"], "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
-            payload = row["gnss_raw_payload_base64"].strip()
+            payload = (row.get("gnss_raw_payload_base64") or "").strip()
             if payload not in {"", "0"}:
                 rawx_entries.append((row["device_id"], ts, _decode_ubx(payload, f"4G accel line {line_no}")))
                 continue
@@ -63,7 +79,7 @@ def parse_accel_csv_single_post_blast_rawx(raw_csv: str) -> G4BlastAccel:
                     colocated_position=None,
                 )
             )
-        except (KeyError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise InvalidCsvError(f"4G accel line {line_no}: {exc}") from exc
     if not samples:
         raise InvalidCsvError("4G accel CSV contained a header but zero data rows")
