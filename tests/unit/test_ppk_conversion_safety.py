@@ -83,3 +83,18 @@ async def test_approved_rover_baseline_zero_at_initial_position():
     service._measurements.write_displacement = AsyncMock()
     await service.handle_position_rows('BASE-01', rows)
     assert service._measurements.write_displacement.await_args.kwargs['total_mm'] == 0.0
+
+
+def test_conversion_uses_explicit_convbin_auxiliary_paths(monkeypatch, tmp_path):
+    captured = []
+    def fake_run(args, text, capture_output, timeout, check):
+        captured.append(args)
+        Path(args[args.index("-o") + 1]).write_text("rinex")
+        return SimpleNamespace(returncode=0, stderr="")
+    monkeypatch.setattr("scripts.convert_rawx_ppk.subprocess.run", fake_run)
+    execute(FIXTURE, tmp_path / "output", convbin="/bin/echo")
+    args = captured[0]
+    for flag in ("-n", "-g", "-h", "-q", "-l", "-s"):
+        value = args[args.index(flag) + 1]
+        assert value != "/"
+        assert Path(value).parent == tmp_path / "output"

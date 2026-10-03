@@ -7,7 +7,13 @@ from ml.pipeline.preprocessing.g4_parser import (
 )
 from ml.pipeline.preprocessing.lora_parser import parse_accel_csv, parse_combined_gnss_csv
 def _ubx_b64(payload: bytes | None = None) -> str:
-    raw = payload or b"\xb5\x62\x02\x15\x00\x00\x00\x00"
+    body = bytes((0x02, 0x15)) + len(payload or b"").to_bytes(2, "little") + (payload or b"")
+    ck_a = 0
+    ck_b = 0
+    for value in body:
+        ck_a = (ck_a + value) & 0xFF
+        ck_b = (ck_b + ck_a) & 0xFF
+    raw = b"\xb5\x62" + body + bytes((ck_a, ck_b))
     return base64.b64encode(raw).decode()
 def test_parse_gnss_csv_rejects_non_ubx_payload():
     bad_payload = base64.b64encode(b"not a ubx frame").decode()
@@ -45,6 +51,16 @@ def test_parse_4g_accel_requires_one_rawx_only():
     row0 = "ROVER-B1-01,0,2026-09-15 10:30:15.000,0.1,0.1,9.8,0.1,0.1,9.8,0\n"
     row1 = f"ROVER-B1-01,1,2026-09-15 10:30:15.001,0.1,0.1,9.8,0.1,0.1,9.8,{_ubx_b64()}\n"
     parsed = parse_accel_csv_single_post_blast_rawx(header + row0 + row1)
-    assert len(parsed.samples) == 2
+    assert len(parsed.samples) == 1
+    assert parsed.samples[0].sample_index == 0
     with pytest.raises(InvalidCsvError):
         parse_accel_csv_single_post_blast_rawx(header + row0)
+
+
+def test_parse_4g_rejects_bad_ubx_checksum():
+    valid = base64.b64decode(_ubx_b64())
+    bad = valid[:-1] + bytes((valid[-1] ^ 0xFF,))
+    encoded = base64.b64encode(bad).decode()
+    csv_text = f"device_id,timestamp_utc,gnss_raw_payload_base64\nBASE-01,2026-09-15 09:24:00,{encoded}\n"
+    with pytest.raises(InvalidBase64Error, match="checksum"):
+        parse_gnss_csv(csv_text)

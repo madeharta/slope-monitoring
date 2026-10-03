@@ -45,6 +45,10 @@ def parse_accel_csv_single_post_blast_rawx(raw_csv: str) -> G4BlastAccel:
     for line_no, row in enumerate(reader, start=2):
         try:
             ts = datetime.strptime(row["timestamp_utc"], "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+            payload = row["gnss_raw_payload_base64"].strip()
+            if payload not in {"", "0"}:
+                rawx_entries.append((row["device_id"], ts, _decode_ubx(payload, f"4G accel line {line_no}")))
+                continue
             samples.append(
                 CanonicalAccelSample(
                     device_id=row["device_id"],
@@ -61,9 +65,6 @@ def parse_accel_csv_single_post_blast_rawx(raw_csv: str) -> G4BlastAccel:
             )
         except (KeyError, ValueError) as exc:
             raise InvalidCsvError(f"4G accel line {line_no}: {exc}") from exc
-        payload = row["gnss_raw_payload_base64"].strip()
-        if payload not in {"", "0"}:
-            rawx_entries.append((row["device_id"], ts, _decode_ubx(payload, f"4G accel line {line_no}")))
     if not samples:
         raise InvalidCsvError("4G accel CSV contained a header but zero data rows")
     if len(rawx_entries) != 1:
@@ -79,4 +80,19 @@ def _decode_ubx(payload: str, context: str) -> bytes:
         raise InvalidBase64Error(f"{context}: {exc}") from exc
     if not raw.startswith(_UBX_SYNC):
         raise InvalidBase64Error(f"{context}: decoded payload is not a UBX frame (bad sync bytes)")
+    if len(raw) < 8:
+        raise InvalidBase64Error(f"{context}: decoded UBX frame is too short")
+    payload_len = int.from_bytes(raw[4:6], "little")
+    expected_len = payload_len + 8
+    if len(raw) != expected_len:
+        raise InvalidBase64Error(
+            f"{context}: UBX length mismatch (declared payload={payload_len}, frame={len(raw)})"
+        )
+    ck_a = 0
+    ck_b = 0
+    for value in raw[2:-2]:
+        ck_a = (ck_a + value) & 0xFF
+        ck_b = (ck_b + ck_a) & 0xFF
+    if raw[-2:] != bytes((ck_a, ck_b)):
+        raise InvalidBase64Error(f"{context}: UBX checksum mismatch")
     return raw

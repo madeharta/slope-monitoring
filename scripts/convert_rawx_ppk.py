@@ -9,7 +9,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 from scripts.prepare_itb_uploads import ubx_valid
-from ml.pipeline.preprocessing.ppk_engine import PPKSolveError, parse_pos_file
+from ml.pipeline.preprocessing.ppk_engine import PPKSolveError, build_convbin_command, parse_pos_file
 from services.rinex_service.normalizer import normalize_rinex_transport
 class ConversionError(ValueError):
     pass
@@ -100,12 +100,12 @@ def execute(input_path: Path, output_dir: Path, base_input: Path | None = None,
     if convbin_exe is None:
         manifest["conversion"] = "NOT_RUN_CONVBIN_MISSING; UBX exported and verified only"
     else:
-        rover_obs = output_dir / "rover.obs"
-        invoke([convbin_exe, "-r", "ubx", "-o", str(rover_obs), str(rover_ubx)], rover_obs, "convbin rover")
+        rover_command, rover_obs = build_convbin_command(convbin_exe, rover_ubx, output_dir, "rover")
+        invoke(rover_command, rover_obs, "convbin rover")
         manifest["conversion"] = "RINEX_OBS_GENERATED_NOT_GEODETICALLY_VALIDATED"
         if base_bytes is not None:
-            base_obs = output_dir / "base.obs"
-            invoke([convbin_exe, "-r", "ubx", "-o", str(base_obs), str(base_ubx)], base_obs, "convbin base")
+            base_command, base_obs = build_convbin_command(convbin_exe, base_ubx, output_dir, "base")
+            invoke(base_command, base_obs, "convbin base")
             solver = _binary(rnx2rtkp)
             if solver is None:
                 manifest["ppk"] = "NOT_RUN_RNX2RTKP_MISSING"

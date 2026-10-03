@@ -6,6 +6,7 @@ import pytest
 from ml.pipeline.preprocessing.ppk_engine import (
     PPKSolveError,
     RTKLibPPKEngine,
+    build_convbin_command,
     parse_pos_file,
     parse_pos_line,
 )
@@ -106,3 +107,22 @@ def test_compressed_cached_navigation_is_materialized_plain_for_rtklib(tmp_path)
     assert nav_path.read_bytes() == rinex
     assert meta["provider"] == "BKG_WRD"
     assert meta["cache_hit"] is False
+
+
+def test_convbin_command_sets_all_auxiliary_output_paths(tmp_path):
+    ubx = tmp_path / "rover.ubx"
+    args, obs = build_convbin_command("convbin", ubx, tmp_path, "rover")
+    assert obs == tmp_path / "rover.obs"
+    expected = {
+        "-o": tmp_path / "rover.obs",
+        "-n": tmp_path / "rover.nav",
+        "-g": tmp_path / "rover.gnav",
+        "-h": tmp_path / "rover.hnav",
+        "-q": tmp_path / "rover.qnav",
+        "-l": tmp_path / "rover.lnav",
+        "-s": tmp_path / "rover.sbs",
+    }
+    for flag, path in expected.items():
+        assert args[args.index(flag) + 1] == str(path)
+    assert args[-1] == str(ubx)
+    assert "/" not in [args[args.index(flag) + 1] for flag in expected]

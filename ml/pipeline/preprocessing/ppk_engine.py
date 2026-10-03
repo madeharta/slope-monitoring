@@ -14,6 +14,28 @@ class PPKSolveError(RuntimeError):
     pass
 
 
+def build_convbin_command(
+    convbin_path: str,
+    ubx_path: Path,
+    out_dir: Path,
+    label: str,
+) -> tuple[list[str], Path]:
+    obs_path = out_dir / f"{label}.obs"
+    outputs = {
+        "-n": out_dir / f"{label}.nav",
+        "-g": out_dir / f"{label}.gnav",
+        "-h": out_dir / f"{label}.hnav",
+        "-q": out_dir / f"{label}.qnav",
+        "-l": out_dir / f"{label}.lnav",
+        "-s": out_dir / f"{label}.sbs",
+    }
+    args = [convbin_path, "-r", "ubx", "-o", str(obs_path)]
+    for flag, path in outputs.items():
+        args.extend([flag, str(path)])
+    args.append(str(ubx_path))
+    return args, obs_path
+
+
 @dataclass(frozen=True)
 class PPKSolutionEpoch:
     timestamp_utc: datetime
@@ -116,9 +138,9 @@ class RTKLibPPKEngine(PPKEngine):
         raise PPKSolveError("single-epoch solve() is deprecated; use solve_window() with an observation timestamp")
 
     def _convert_to_rinex(self, ubx_path: Path, out_dir: Path, label: str) -> Path:
-        obs_path = out_dir / f"{label}.obs"
+        args, obs_path = build_convbin_command(self._convbin, ubx_path, out_dir, label)
         result = self._run_subprocess(
-            [self._convbin, "-r", "ubx", "-o", str(obs_path), str(ubx_path)],
+            args,
             timeout=30,
             step=f"convbin ({label})",
         )

@@ -20,7 +20,13 @@ def _headers(**overrides):
     h.update(overrides)
     return h
 def _ubx_b64():
-    return base64.b64encode(b"\xb5\x62\x02\x15\x00\x00\x00\x00").decode()
+    body = bytes((0x02, 0x15, 0x00, 0x00))
+    ck_a = 0
+    ck_b = 0
+    for value in body:
+        ck_a = (ck_a + value) & 0xFF
+        ck_b = (ck_b + ck_a) & 0xFF
+    return base64.b64encode(b"\xb5\x62" + body + bytes((ck_a, ck_b))).decode()
 def test_valid_4g_gnss_headers():
     parsed = validate_headers(_headers())
     assert parsed.communication_mode == "4g"
@@ -63,7 +69,8 @@ def test_4g_blast_requires_exactly_one_post_blast_rawx():
     row0 = "ROVER-B1-01,0,2026-09-24 21:00:00.000,0.1,0.1,9.8,0.1,0.1,9.8,0\n"
     row1 = f"ROVER-B1-01,1,2026-09-24 21:00:00.001,0.2,0.1,9.7,0.2,0.1,9.7,{payload}\n"
     parsed = parse_accel_csv_single_post_blast_rawx(header + row0 + row1)
-    assert len(parsed.samples) == 2
+    assert len(parsed.samples) == 1
+    assert parsed.samples[0].sample_index == 0
     assert parsed.post_blast_rawx[0] == "ROVER-B1-01"
     with pytest.raises(InvalidCsvError):
         parse_accel_csv_single_post_blast_rawx(header + row0)
