@@ -18,7 +18,7 @@ export function openStream(onEvent) {
   es.onmessage = (e) => {
     try {
       onEvent(JSON.parse(e.data));
-    } catch
+    } catch {}
   };
   return es;
 }
