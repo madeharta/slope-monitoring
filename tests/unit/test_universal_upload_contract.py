@@ -1,7 +1,7 @@
 import base64
 import pytest
 from common.errors import InvalidCsvError
-from ml.pipeline.preprocessing.g4_parser import parse_accel_csv_single_post_blast_rawx
+from ml.pipeline.preprocessing.g4_parser import parse_accel_csv_single_auxiliary_rawx
 from ml.pipeline.preprocessing.lora_parser import parse_combined_gnss_csv
 from services.ingestion_service.csv_validator import (
     validate_headers,
@@ -60,7 +60,7 @@ def test_lora_combined_gnss_splits_base_rawx_and_rover_rtk():
     assert len(parsed.rawx_rows) == 1
     assert len(parsed.position_rows) == 1
     assert parsed.position_rows[0].device_id == "ROVER-B1-01"
-def test_4g_blast_requires_exactly_one_post_blast_rawx():
+def test_4g_blast_requires_exactly_one_auxiliary_rawx():
     payload = _ubx_b64()
     header = (
         "device_id,sample_index,timestamp_utc,adxl355_x_mps2,adxl355_y_mps2,adxl355_z_mps2,"
@@ -68,9 +68,9 @@ def test_4g_blast_requires_exactly_one_post_blast_rawx():
     )
     row0 = "ROVER-B1-01,0,2026-09-24 21:00:00.000,0.1,0.1,9.8,0.1,0.1,9.8,0\n"
     row1 = f"ROVER-B1-01,1,2026-09-24 21:00:00.001,0.2,0.1,9.7,0.2,0.1,9.7,{payload}\n"
-    parsed = parse_accel_csv_single_post_blast_rawx(header + row0 + row1)
+    parsed = parse_accel_csv_single_auxiliary_rawx(header + row0 + row1)
     assert len(parsed.samples) == 1
     assert parsed.samples[0].sample_index == 0
-    assert parsed.post_blast_rawx[0] == "ROVER-B1-01"
+    assert parsed.auxiliary_rawx[0] == "ROVER-B1-01"
     with pytest.raises(InvalidCsvError):
-        parse_accel_csv_single_post_blast_rawx(header + row0)
+        parse_accel_csv_single_auxiliary_rawx(header + row0)

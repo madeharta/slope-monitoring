@@ -11,7 +11,7 @@ _UBX_SYNC = b"\xb5\x62"
 @dataclass(frozen=True)
 class G4BlastAccel:
     samples: list[CanonicalAccelSample]
-    post_blast_rawx: tuple[str, datetime, bytes]
+    auxiliary_rawx: tuple[str, datetime, bytes]
 def parse_gnss_csv(raw_csv: str) -> list[tuple[str, datetime, bytes]]:
     reader = csv.DictReader(StringIO(raw_csv))
     required = {"device_id", "timestamp_utc", "gnss_raw_payload_base64"}
@@ -45,7 +45,7 @@ def parse_gnss_csv(raw_csv: str) -> list[tuple[str, datetime, bytes]]:
     if not out:
         raise InvalidCsvError("4G gnss CSV contained a header but zero data rows")
     return out
-def parse_accel_csv_single_post_blast_rawx(raw_csv: str) -> G4BlastAccel:
+def parse_accel_csv_single_auxiliary_rawx(raw_csv: str) -> G4BlastAccel:
     reader = csv.DictReader(StringIO(raw_csv))
     fields = set(reader.fieldnames or [])
     required = {
@@ -85,10 +85,10 @@ def parse_accel_csv_single_post_blast_rawx(raw_csv: str) -> G4BlastAccel:
         raise InvalidCsvError("4G accel CSV contained a header but zero data rows")
     if len(rawx_entries) != 1:
         raise InvalidCsvError(
-            "4G accel override requires exactly one post-blast gnss_raw_payload_base64; "
+            "4G accel requires exactly one auxiliary gnss_raw_payload_base64 row; "
             f"found {len(rawx_entries)}"
         )
-    return G4BlastAccel(samples=samples, post_blast_rawx=rawx_entries[0])
+    return G4BlastAccel(samples=samples, auxiliary_rawx=rawx_entries[0])
 def _decode_ubx(payload: str, context: str) -> bytes:
     try:
         raw = base64.b64decode(payload, validate=True)

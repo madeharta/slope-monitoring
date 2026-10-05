@@ -2,7 +2,7 @@ import base64
 import pytest
 from common.errors import InvalidBase64Error, InvalidCsvError
 from ml.pipeline.preprocessing.g4_parser import (
-    parse_accel_csv_single_post_blast_rawx,
+    parse_accel_csv_single_auxiliary_rawx,
     parse_gnss_csv,
 )
 from ml.pipeline.preprocessing.lora_parser import parse_accel_csv, parse_combined_gnss_csv
@@ -50,11 +50,11 @@ def test_parse_4g_accel_requires_one_rawx_only():
     )
     row0 = "ROVER-B1-01,0,2026-09-15 10:30:15.000,0.1,0.1,9.8,0.1,0.1,9.8,0\n"
     row1 = f"ROVER-B1-01,1,2026-09-15 10:30:15.001,0.1,0.1,9.8,0.1,0.1,9.8,{_ubx_b64()}\n"
-    parsed = parse_accel_csv_single_post_blast_rawx(header + row0 + row1)
+    parsed = parse_accel_csv_single_auxiliary_rawx(header + row0 + row1)
     assert len(parsed.samples) == 1
     assert parsed.samples[0].sample_index == 0
     with pytest.raises(InvalidCsvError):
-        parse_accel_csv_single_post_blast_rawx(header + row0)
+        parse_accel_csv_single_auxiliary_rawx(header + row0)
 
 
 def test_parse_4g_rejects_bad_ubx_checksum():

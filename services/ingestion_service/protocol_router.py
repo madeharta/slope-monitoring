@@ -15,10 +15,10 @@ def route_and_parse(headers: UploadHeaders, raw_csv: str) -> ParsedUpload:
     if key in {("4g", "gnss", "base"), ("4g", "gnss", "rover")}:
         return ParsedUpload(rawx_rows=g4_parser.parse_gnss_csv(raw_csv))
     if key == ("4g", "accel", "rover"):
-        parsed = g4_parser.parse_accel_csv_single_post_blast_rawx(raw_csv)
+        parsed = g4_parser.parse_accel_csv_single_auxiliary_rawx(raw_csv)
         return ParsedUpload(
             accel_rows=parsed.samples,
-            blast_rawx_rows=[parsed.post_blast_rawx],
+            blast_rawx_rows=[parsed.auxiliary_rawx],
         )
     if key == ("lora", "gnss", "base"):
         parsed = lora_parser.parse_combined_gnss_csv(raw_csv, base_device_id=headers.device_id)
