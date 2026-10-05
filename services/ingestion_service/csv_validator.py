@@ -16,6 +16,26 @@ REQUIRED_HEADERS = (
 _ALLOWED_MODES = {"4g", "lora"}
 _ALLOWED_ROLES = {"base", "rover"}
 _ALLOWED_DATA_TYPES = {"gnss", "accel"}
+RETAINED_UPLOAD_HEADER_NAMES = (
+    "X-Communication-Mode",
+    "X-Device-Id",
+    "X-Device-Role",
+    "X-Data-Type",
+    "X-File-Name",
+    "X-Record-Count",
+    "X-Upload-Origin",
+    "X-Sequence-Number",
+    "X-Device-Version",
+    "X-Battery-Voltage",
+    "X-Signal-Rssi-Dbm",
+    "X-Gnss-Ok",
+    "X-Modem-Ok",
+    "X-Sd-Ok",
+    "X-Pending-File-Count",
+    "X-Is-Retry",
+    "X-Adxl355-Ok",
+    "X-Mpu9250-Ok",
+)
 _TS_PATTERNS = {
     "gnss": r"\d{8}_\d{4}",
     "accel": r"\d{8}_\d{6}",
@@ -29,6 +49,15 @@ class UploadHeaders:
     file_name: str
     record_count: int
     upload_origin: str
+
+def retained_upload_headers(raw_headers: Mapping[str, str]) -> dict[str, str]:
+    retained: dict[str, str] = {}
+    for name in RETAINED_UPLOAD_HEADER_NAMES:
+        value = raw_headers.get(name)
+        if value is not None and value != "":
+            retained[name] = value
+    return retained
+
 def validate_headers(raw_headers: Mapping[str, str]) -> UploadHeaders:
     for name in REQUIRED_HEADERS:
         if not raw_headers.get(name):

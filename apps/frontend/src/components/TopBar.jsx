@@ -94,6 +94,9 @@ export default function TopBar() {
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/devices"); }}>
                 Devices
               </button>
+              <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/uploads"); }}>
+                Uploads
+              </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/settings"); }}>
                 Settings
               </button>

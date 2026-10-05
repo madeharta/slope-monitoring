@@ -449,3 +449,45 @@ html[data-variant="editorial"] .ov-title .ov-count{ font-family:'Playfair Displa
   min-width: 82px;
   white-space: nowrap;
 }
+.uploads-panel{ max-width:1500px; margin:0 auto; padding:20px; }
+.uploads-scroll{ overflow:auto; max-height:68vh; }
+.uploads-table{ min-width:1180px; }
+.upload-status{ display:inline-flex; padding:2px 7px; border:1px solid var(--line); border-radius:999px; font-size:10px; text-transform:uppercase; letter-spacing:.04em; }
+.upload-status-processed{ color:var(--ok); }
+.upload-status-processing{ color:var(--siaga); }
+.upload-status-failed{ color:var(--bahaya); }
+.upload-error{ max-width:260px; margin-top:4px; color:var(--bahaya); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Upload History uses the dashboard dark/editorial palette instead of the legacy light admin buttons. */
+.uploads-panel .admin-btn{
+  border:1px solid var(--line);
+  background:var(--raise);
+  color:var(--ink-2);
+  box-shadow:none;
+}
+.uploads-panel .admin-btn:hover:not(:disabled){
+  background:var(--panel-2);
+  color:var(--ink);
+  border-color:color-mix(in srgb, var(--line) 55%, var(--accent));
+}
+.uploads-panel .admin-btn:disabled{
+  opacity:.42;
+  color:var(--ink-3);
+  background:var(--panel-2);
+}
+.uploads-panel .upload-download-btn:not(:disabled){
+  border-color:color-mix(in srgb, var(--accent) 55%, var(--line));
+  background:var(--cobalt-soft);
+  color:var(--cobalt-2);
+  font-weight:600;
+}
+.uploads-panel .upload-download-btn:hover:not(:disabled){
+  background:color-mix(in srgb, var(--cobalt-soft) 72%, var(--raise));
+  color:var(--ink);
+}
+.uploads-panel .upload-reset-btn{
+  min-width:76px;
+}
+.uploads-panel .upload-pager-btn{
+  min-width:142px;
+}
