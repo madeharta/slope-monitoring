@@ -38,9 +38,11 @@ def test_rover_cannot_override_global_trigger():
     )
     assert result["TriggerStart"] == 1
     assert result["TimeOutTrigger"] == 4
+
 def test_contract_battery_inventory_excludes_legacy_rover_id():
     assert _CONTRACT_BATTERY_DEVICE_IDS == {"BASE-01", "ROVER-B1-01", "ROVER-B1-02"}
     assert "ROVER-01" not in _CONTRACT_BATTERY_DEVICE_IDS
+
 def test_battery_contract_shape_is_exact_and_legacy_rows_are_ignored():
     rows = [
         {"device_id": "BASE-01", "battery_cal_m": 1.2, "battery_cal_c": 0.3},

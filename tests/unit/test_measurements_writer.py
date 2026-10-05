@@ -1,24 +1,47 @@
+"""Regression test for the 2026-09-18 bug: `measurements.unit` is
+`TEXT NOT NULL` in the real schema (001_schema.sql), but
+MeasurementsWriter once passed `None` for the `gnss_fix_type` row. This
+test doesn't touch a database — it inspects the row tuples MeasurementsWriter
+builds, using a fake connection that just records what would have been
+sent, so a future regression is caught by `pytest` alone (no Postgres
+needed), not only by a live HTTP report.
+"""
+
 from __future__ import annotations
+
 import asyncio
 from datetime import datetime, timezone
+
 from services.monitoring_service.measurements_writer import MeasurementsWriter
+
+
 class _FakeConn:
     def __init__(self, sink: list) -> None:
         self.sink = sink
+
     async def executemany(self, query, seq):
         self.sink.extend(seq)
+
+
 class _FakeAcquireCtx:
     def __init__(self, conn) -> None:
         self.conn = conn
+
     async def __aenter__(self):
         return self.conn
+
     async def __aexit__(self, *a):
         return False
+
+
 class _FakePool:
     def __init__(self, sink: list) -> None:
         self.sink = sink
+
     def acquire(self):
         return _FakeAcquireCtx(_FakeConn(self.sink))
+
+
 def test_write_displacement_never_sends_null_unit():
     sink: list = []
     writer = MeasurementsWriter(_FakePool(sink))
@@ -32,6 +55,8 @@ def test_write_displacement_never_sends_null_unit():
     for row in sink:
         _time, _device_id, _site_id, quantity, _value, unit, _source_kind, _source_file, _validation_status = row
         assert unit is not None, f"quantity '{quantity}' has unit=None — violates measurements.unit NOT NULL"
+
+
 def test_write_vibration_never_sends_null_unit():
     sink: list = []
     writer = MeasurementsWriter(_FakePool(sink))
@@ -45,6 +70,8 @@ def test_write_vibration_never_sends_null_unit():
     for row in sink:
         _time, _device_id, _site_id, quantity, _value, unit, _source_kind, _source_file, _validation_status = row
         assert unit is not None, f"quantity '{quantity}' has unit=None — violates measurements.unit NOT NULL"
+
+
 def test_write_tilt_never_sends_null_unit():
     sink: list = []
     writer = MeasurementsWriter(_FakePool(sink))

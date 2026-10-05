@@ -1,21 +1,31 @@
+"""Regression tests for offline ITB data staging; no network/database dependency."""
 import csv
 import json
 from pathlib import Path
+
 import pytest
+
 from scripts.prepare_itb_uploads import COLUMNS, SOURCES, convert, ubx_valid
+
+
 def _write(path, columns, rows):
     with path.open('w', encoding='utf-8', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
+
+
 def _frame():
     import base64
+    # Minimal complete UBX-RXM-RAWX-shaped frame, empty payload for checksum-only unit test.
     body = bytes([2, 21, 0, 0])
     a = b = 0
     for x in body:
         a = (a + x) % 256
         b = (b + a) % 256
     return base64.b64encode(b'\xb5\x62' + body + bytes([a, b])).decode()
+
+
 def test_ubx_checksum_and_invalid_placeholder():
     assert ubx_valid(_frame())
     assert not ubx_valid('0')
@@ -23,6 +33,8 @@ def test_ubx_checksum_and_invalid_placeholder():
     raw = bytearray(base64.b64decode(_frame()))
     raw[-1] ^= 1
     assert not ubx_valid(base64.b64encode(raw).decode())
+
+
 def test_staging_preserves_all_rows_and_blocks_unsafe_data(tmp_path):
     source = tmp_path / 'source'
     source.mkdir()
@@ -45,6 +57,8 @@ def test_staging_preserves_all_rows_and_blocks_unsafe_data(tmp_path):
     assert json.loads((output/'manifest.json').read_text()) == result
     with pytest.raises(FileExistsError):
         convert(source, output)
+
+
 def test_reject_modified_schema(tmp_path):
     source = tmp_path/'source'
     source.mkdir()
