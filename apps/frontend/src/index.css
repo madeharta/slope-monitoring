@@ -491,3 +491,286 @@ html[data-variant="editorial"] .ov-title .ov-count{ font-family:'Playfair Displa
 .uploads-panel .upload-pager-btn{
   min-width:142px;
 }
+
+
+/* P0B settings layout */
+.settings-page{
+  padding-bottom:40px;
+}
+
+.settings-card{
+  box-sizing:border-box;
+  width:min(100%, 980px);
+  max-width:980px;
+  margin-inline:auto;
+  overflow:hidden;
+  color:var(--ink);
+  background:var(--surface, rgba(24,20,17,.94));
+  border-color:var(--line);
+  box-shadow:0 18px 50px rgba(0,0,0,.18);
+}
+
+.settings-card select,
+.settings-card input{
+  box-sizing:border-box;
+  min-width:0;
+  color:var(--ink);
+  background:var(--surface-2, rgba(255,255,255,.045));
+  border:1px solid var(--line);
+}
+
+.settings-card select:focus,
+.settings-card input:focus{
+  outline:none;
+  border-color:var(--cobalt);
+}
+
+.settings-card .admin-btn{
+  color:var(--ink);
+  background:var(--surface-2, rgba(255,255,255,.05));
+  border-color:var(--line);
+}
+
+.settings-card .admin-btn-primary{
+  color:#fff;
+  background:var(--cobalt);
+  border-color:var(--cobalt);
+}
+
+.settings-row{
+  display:grid;
+  grid-template-columns:minmax(150px, 220px) minmax(0, 1fr) auto;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.settings-row--compact{
+  grid-template-columns:24px minmax(0, 1fr) auto;
+}
+
+.settings-row-label{
+  min-width:0;
+  color:var(--ink-2);
+  font-size:12px;
+}
+
+.settings-input{
+  width:100%;
+  min-height:38px;
+  padding:8px 10px;
+  border-radius:7px;
+}
+
+.settings-save{
+  min-width:82px;
+  white-space:nowrap;
+}
+
+.settings-battery-row{
+  display:grid;
+  grid-template-columns:minmax(120px,160px) repeat(2,minmax(0,1fr));
+  gap:12px;
+  align-items:center;
+  min-width:0;
+}
+
+.settings-message{
+  margin-top:14px;
+  padding:9px 11px;
+  color:var(--ink);
+  background:var(--surface-2, rgba(255,255,255,.04));
+  border:1px solid var(--line);
+  border-radius:7px;
+  font-size:12px;
+}
+
+@media (max-width:900px){
+  .settings-battery-row{
+    grid-template-columns:1fr;
+    padding:10px 0;
+    border-bottom:1px solid var(--line);
+  }
+}
+
+@media (max-width:680px){
+  .settings-row,
+  .settings-row--compact{
+    grid-template-columns:1fr;
+    gap:6px;
+  }
+
+  .settings-save{
+    width:100%;
+  }
+}
+
+
+/* P0B UX v2 — compact settings + explicit scrolling */
+
+/*
+ * The application shell intentionally clips the viewport. Settings therefore
+ * owns its vertical scrolling explicitly rather than relying on body scroll.
+ */
+.settings-page{
+  height:100%;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  scrollbar-gutter:stable;
+  touch-action:pan-y;
+  padding-bottom:64px;
+}
+
+/* Content should grow naturally; never clip the bottom of the form. */
+.settings-card{
+  overflow:visible;
+  max-width:920px;
+  margin-top:18px;
+  margin-bottom:40px;
+  padding:28px 32px 36px;
+}
+
+/*
+ * IMPORTANT:
+ * Legacy `.admin-form label` has higher specificity than `.settings-row`
+ * and forced flex-direction:column. Override it intentionally.
+ */
+.settings-card .admin-form{
+  gap:10px;
+  margin-top:14px;
+}
+
+.settings-card .admin-form label.settings-row{
+  display:grid;
+  grid-template-columns:minmax(170px, 215px) minmax(240px, 1fr) 88px;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+  flex-direction:initial;
+  color:var(--ink-2);
+  font-size:12px;
+  font-weight:500;
+}
+
+/* Short labels m/c need a denser layout inside the battery grid. */
+.settings-card .admin-form label.settings-row--compact{
+  grid-template-columns:22px minmax(100px, 1fr) 78px;
+  gap:8px;
+}
+
+.settings-card .settings-row-label{
+  line-height:1.35;
+}
+
+.settings-card .settings-input{
+  height:38px;
+  min-height:38px;
+  padding:0 11px;
+  border-radius:7px;
+  font-family:var(--mono);
+  font-size:12.5px;
+}
+
+/*
+ * Save is a local field action: visible enough to be understood as CTA,
+ * but not so dominant that five buttons compete with the page hierarchy.
+ */
+.settings-card .settings-save{
+  min-width:88px;
+  height:38px;
+  padding:0 14px;
+  border:1px solid color-mix(in srgb, var(--cobalt) 42%, var(--line));
+  border-radius:7px;
+  background:var(--cobalt-soft);
+  color:var(--cobalt-2);
+  font-size:11.5px;
+  font-weight:650;
+  white-space:nowrap;
+}
+
+.settings-card .settings-save:hover:not(:disabled){
+  background:color-mix(in srgb, var(--cobalt-soft) 72%, var(--raise));
+  border-color:var(--cobalt);
+  color:var(--ink);
+  transform:translateY(-1px);
+}
+
+.settings-card .settings-save:active:not(:disabled){
+  transform:none;
+}
+
+.settings-card .settings-save:disabled{
+  opacity:.42;
+}
+
+/* Site/device selection should read as navigation, not primary form CTA. */
+.settings-card > div:first-child select{
+  width:min(100%, 360px);
+}
+
+.settings-battery-row{
+  padding:8px 0;
+}
+
+.settings-battery-row + .settings-battery-row{
+  border-top:1px solid var(--line-soft);
+}
+
+/* Tablet: preserve label/input/action relationship without overflow. */
+@media (max-width:900px){
+  .settings-card{
+    max-width:760px;
+    padding:24px;
+  }
+
+  .settings-card .admin-form label.settings-row{
+    grid-template-columns:minmax(135px, 170px) minmax(0, 1fr) 82px;
+  }
+
+  .settings-battery-row{
+    grid-template-columns:120px minmax(0,1fr);
+  }
+
+  .settings-battery-row .settings-row--compact{
+    grid-column:2;
+  }
+}
+
+/* Mobile: stack only when there really is not enough horizontal space. */
+@media (max-width:620px){
+  .settings-page{
+    padding-left:14px;
+    padding-right:14px;
+  }
+
+  .settings-card{
+    width:100%;
+    padding:18px 14px 28px;
+    margin-top:10px;
+  }
+
+  .settings-card .admin-form label.settings-row,
+  .settings-card .admin-form label.settings-row--compact{
+    grid-template-columns:1fr;
+    gap:6px;
+  }
+
+  .settings-card .settings-save{
+    width:100%;
+  }
+
+  .settings-battery-row{
+    grid-template-columns:1fr;
+  }
+
+  .settings-battery-row .settings-row--compact{
+    grid-column:auto;
+  }
+}
+
+/* P0B UX v3 — keep Settings header clear of absolute TopBar */
+.settings-page{
+  padding-top:92px;
+}

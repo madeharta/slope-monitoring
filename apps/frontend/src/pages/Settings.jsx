@@ -11,6 +11,7 @@ const DEVICE_KEYS = [
 export default function Settings() {
   const { authFetch, auth } = useAuth();
   const navigate = useNavigate();
+  const canEdit = auth?.role === "admin" || auth?.role === "operator";
   const [devices, setDevices] = useState(null);
   const [site, setSite] = useState("");
   const [device, setDevice] = useState("");
@@ -32,7 +33,7 @@ export default function Settings() {
     return () => { alive = false; };
   }, [device, authFetch]);
   async function save(key, value) {
-    if (auth?.role !== "admin" && auth?.role !== "operator") {
+    if (!canEdit) {
       setMessage("Perlu role operator/admin untuk mengubah config.");
       return;
     }
@@ -54,6 +55,11 @@ export default function Settings() {
     }
   }
   async function saveBattery(deviceId, key, value) {
+    if (!canEdit) {
+      setMessage("Perlu role operator/admin untuk mengubah kalibrasi baterai.");
+      return;
+    }
+
     setSaving(`${deviceId}:${key}`);
     setMessage(null);
     try {
@@ -72,12 +78,12 @@ export default function Settings() {
     }
   }
   return (
-    <div className="l2 pgdoc2-page">
+    <div className="l2 pgdoc2-page settings-page">
       <div className="l2head">
         <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Settings — Konfigurasi Device</h1>
       </div>
-      <div className="pgdoc2-card">
+      <div className="pgdoc2-card settings-card">
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>1. Pilih site</label>
           <select value={site} onChange={(e) => { setSite(e.target.value); setDevice(""); }} style={{ minWidth: 240 }}>
@@ -106,29 +112,37 @@ export default function Settings() {
             <label style={{ fontSize: 13, fontWeight: 600, display: "block", margin: "18px 0 6px" }}>4. Kalibrasi baterai site</label>
             <div className="admin-form">
               {Object.entries(config.battery_cal || {}).map(([deviceId, cal]) => (
-                <div key={deviceId} style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 10, alignItems: "center" }}>
+                <div key={deviceId} className="settings-battery-row">
                   <strong>{deviceId}</strong>
-                  <SettingRow label="m" type="number" value={cal?.m} onSave={(v) => saveBattery(deviceId, "battery_cal_m", v)} saving={saving === `${deviceId}:battery_cal_m`} />
-                  <SettingRow label="c" type="number" value={cal?.c} onSave={(v) => saveBattery(deviceId, "battery_cal_c", v)} saving={saving === `${deviceId}:battery_cal_c`} />
+                  <SettingRow compact label="m" type="number" value={cal?.m} onSave={(v) => saveBattery(deviceId, "battery_cal_m", v)} saving={saving === `${deviceId}:battery_cal_m`} />
+                  <SettingRow compact label="c" type="number" value={cal?.c} onSave={(v) => saveBattery(deviceId, "battery_cal_c", v)} saving={saving === `${deviceId}:battery_cal_c`} />
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 16, fontSize: 13 }}>TriggerStart: <strong>{config.TriggerStart ?? 0}</strong></div>
           </>
         )}
-        {message && <div style={{ marginTop: 14, fontSize: 13, color: "#333" }}>{message}</div>}
+        {message && <div className="settings-message" role="status">{message}</div>}
       </div>
     </div>
   );
 }
-function SettingRow({ label, value, onSave, saving, type = "number" }) {
+function SettingRow({ label, value, onSave, saving, type = "number", compact = false }) {
   const [draft, setDraft] = useState(value ?? "");
   useEffect(() => setDraft(value ?? ""), [value]);
   return (
-    <label style={{ flexDirection: "row", alignItems: "center", gap: 10, display: "flex" }}>
-      <span style={{ minWidth: 140 }}>{label}</span>
-      <input type={type} value={draft} onChange={(e) => setDraft(e.target.value)} style={{ flex: 1 }} />
-      <button className="admin-btn" onClick={() => onSave(draft)} disabled={saving}>{saving ? "…" : "Simpan"}</button>
+    <label className={"settings-row" + (compact ? " settings-row--compact" : "")}>
+      <span className="settings-row-label">{label}</span>
+      <input
+        className="settings-input"
+        type={type}
+        step={type === "number" ? "any" : undefined}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <button className="admin-btn settings-save" onClick={() => onSave(draft)} disabled={saving}>
+        {saving ? "…" : "Simpan"}
+      </button>
     </label>
   );
 }

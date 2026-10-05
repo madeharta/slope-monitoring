@@ -37,10 +37,14 @@ export default function TopBar() {
       variant: s.variant, toggleVariant: s.toggleVariant, setNav: s.setNav,
     })
   );
-  const counts = overview?.status_counts || { siaga: 0, bahaya: 0 };
-  const active = (counts.siaga || 0) + (counts.bahaya || 0);
-  const rate = (active * 0.1).toFixed(1);
-  const chipCls = counts.bahaya ? "crit" : counts.siaga ? "warn" : "";
+  const counts = overview?.operational_alarm_counts || {
+    siaga: 0, bahaya: 0, total: 0,
+  };
+  const operationalReady = overview?.validation?.operational_ready === true;
+  const active = operationalReady ? (counts.total || 0) : 0;
+  const chipCls = operationalReady
+    ? (counts.bahaya ? "crit" : counts.siaga ? "warn" : "")
+    : "";
   const items = [
     { key: "map", label: "Overview", icon: I.dash, onClick: () => { nav("/"); setNav("map"); } },
     { key: "analytics", label: "Analytics", icon: I.chart, onClick: () => setNav("analytics") },
@@ -61,13 +65,26 @@ export default function TopBar() {
         ))}
       </nav>
       <div className="topright">
-        <div className={"alarmchip " + chipCls} title="Active alarms · alarm rate per 10 min (EEMUA 191)">
+        <div
+          className={"alarmchip " + chipCls}
+          title={operationalReady
+            ? "Active operational alarms"
+            : "Operational alarms suppressed pending validation"}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.3 4 2.5 18a1.5 1.5 0 0 0 1.3 2.2h16.4a1.5 1.5 0 0 0 1.3-2.2L13.7 4a1.5 1.5 0 0 0-2.6 0z" />
             <path d="M12 9.5v4" /><path d="M12 17h.01" />
           </svg>
-          <span className="un">{active}</span> active <span style={{ color: "var(--ink-3)" }}>·</span>{" "}
-          <span className="rate">{rate}</span><span className="rlbl">/10m</span>
+          {operationalReady ? (
+            <>
+              <span className="un">{active}</span> active
+            </>
+          ) : (
+            <>
+              <span className="un">0</span> operational{" "}
+              <span className="rlbl">suppressed</span>
+            </>
+          )}
         </div>
         <div className="search"><span className="ic" aria-hidden>⌕</span>
           <input type="text" placeholder="Search slope / device…" aria-label="Search" />

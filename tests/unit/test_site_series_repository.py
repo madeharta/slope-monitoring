@@ -88,7 +88,8 @@ def test_status_reflects_latest_reading_bahaya_threshold():
     repo = SiteSeriesRepository(_FakePool({"site_id": "SITE-A"}, rows))
     result = asyncio.run(repo.get_series("SITE-A", hours=24))
     assert result["status"] == "bahaya"
-    assert result["action"] == "Evacuate - immediate field response."
+    assert "Evacuate" not in result["action"]
+    assert "operational response is suppressed pending validation." in result["action"]
 
 
 def test_from_and_to_both_given_uses_between_not_hours():
