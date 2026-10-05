@@ -1,5 +1,6 @@
 import base64
 import csv
+import struct
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -98,3 +99,83 @@ def test_conversion_uses_explicit_convbin_auxiliary_paths(monkeypatch, tmp_path)
         value = args[args.index(flag) + 1]
         assert value != "/"
         assert Path(value).parent == tmp_path / "output"
+
+
+def _rawx_b64(*, week: int, tow: float, num_meas: int, leap_s: int = 18, rec_stat: int = 1) -> str:
+    payload = struct.pack("<dHbBBBH", tow, week, leap_s, num_meas, rec_stat, 1, 0)
+    payload += b"\x00" * (32 * num_meas)
+    body = bytes((0x02, 0x15)) + len(payload).to_bytes(2, "little") + payload
+    ck_a = 0
+    ck_b = 0
+    for value in body:
+        ck_a = (ck_a + value) & 0xFF
+        ck_b = (ck_b + ck_a) & 0xFF
+    return base64.b64encode(b"\xb5\x62" + body + bytes((ck_a, ck_b))).decode()
+
+
+def _write_rawx_csv(path: Path, device_id: str, rows: list[tuple[str, str]]) -> None:
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["device_id", "timestamp_utc", "gnss_raw_payload_base64"])
+        for timestamp_utc, payload in rows:
+            writer.writerow([device_id, timestamp_utc, payload])
+
+
+def test_read_rawx_records_receiver_time_and_unusable_zero_measurement_frames(tmp_path):
+    source = tmp_path / "rawx.csv"
+    _write_rawx_csv(
+        source,
+        "ROVER-B1-01",
+        [
+            ("2026-09-18 12:00:00", _rawx_b64(week=0, tow=2.0, num_meas=0)),
+            ("2026-09-18 12:00:01", _rawx_b64(week=2436, tow=1000.0, num_meas=1)),
+        ],
+    )
+    _, _, meta = read_rawx(source)
+    assert meta["rows"] == 2
+    assert meta["usable_gnss_epochs"] == 1
+    assert meta["zero_measurement_frames"] == 1
+    assert meta["first_gps_seconds"] == meta["last_gps_seconds"]
+
+
+def test_read_rawx_reports_csv_vs_receiver_clock_delta(tmp_path):
+    source = tmp_path / "rawx.csv"
+    payload = _rawx_b64(week=2436, tow=1000.0, num_meas=1, leap_s=18, rec_stat=1)
+    _write_rawx_csv(
+        source,
+        "ROVER-B1-01",
+        [("2026-09-18 12:00:00", payload)],
+    )
+    _, _, meta = read_rawx(source)
+    assert meta["first_gnss_utc"] is not None
+    assert meta["last_gnss_utc"] is not None
+    assert meta["csv_gnss_delta_seconds_min"] == meta["csv_gnss_delta_seconds_max"]
+
+
+def test_base_rover_overlap_gate_uses_rawx_receiver_time_not_csv_clock(tmp_path):
+    rover = tmp_path / "rover.csv"
+    base = tmp_path / "base.csv"
+    nav = tmp_path / "nav.rnx"
+    nav.write_text("nonempty nav placeholder")
+
+    _write_rawx_csv(
+        rover,
+        "ROVER-B1-01",
+        [("2026-09-18 12:00:00", _rawx_b64(week=2436, tow=1000.0, num_meas=1))],
+    )
+    _write_rawx_csv(
+        base,
+        "BASE-01",
+        [("2026-09-18 18:00:00", _rawx_b64(week=2436, tow=1000.0, num_meas=1))],
+    )
+
+    manifest = execute(
+        rover,
+        tmp_path / "output",
+        base_input=base,
+        base_coords=(-6.0, 107.0, 100.0),
+        nav=nav,
+        convbin="/absent/convbin",
+    )
+    assert manifest["base"] is not None
+    assert manifest["conversion"].startswith("NOT_RUN_CONVBIN_MISSING")
