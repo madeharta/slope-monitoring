@@ -84,6 +84,7 @@ class MeasurementsWriter:
             timestamp_utc,
             rows,
             source_kind="external",
+            source_file="Open-Meteo",
             validation_status="not_applicable",
         )
 

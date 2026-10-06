@@ -87,3 +87,22 @@ def test_write_tilt_never_sends_null_unit():
     for row in sink:
         _time, _device_id, _site_id, quantity, _value, unit, _source_kind, _source_file, _validation_status = row
         assert unit == "deg", f"quantity '{quantity}' has unit='{unit}', expected 'deg'"
+
+
+def test_write_weather_is_external_and_attributed():
+    sink: list = []
+    writer = MeasurementsWriter(_FakePool(sink))
+    asyncio.run(
+        writer.write_weather(
+            site_id="SITE-A", timestamp_utc=datetime(2026, 9, 18, tzinfo=timezone.utc),
+            rainfall_mm=1.2, temperature_c=27.0, humidity_pct=80.0,
+            rainfall_24h_mm=5.0, rainfall_72h_mm=None,
+        )
+    )
+    assert {row[3] for row in sink} == {
+        "rainfall_external", "temperature_external", "humidity_external", "rainfall_24h_external"
+    }
+    assert all(row[1] == "WEATHER-API" for row in sink)
+    assert all(row[6] == "external" for row in sink)
+    assert all(row[7] == "Open-Meteo" for row in sink)
+    assert all(row[8] == "not_applicable" for row in sink)
