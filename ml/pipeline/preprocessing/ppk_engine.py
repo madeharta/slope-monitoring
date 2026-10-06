@@ -10,10 +10,14 @@ from pathlib import Path
 from services.rinex_service.normalizer import RINEXNormalizationError, normalize_rinex_transport
 
 
+PPK_OUTPUT_SCHEMA_VERSION = "ppk.solution.v1"
+
+
 class PPKSolveError(RuntimeError):
     pass
 
 
+# Explicitly bind every RTKLIB auxiliary output so convbin never resolves a default path to filesystem root.
 def build_convbin_command(
     convbin_path: str,
     ubx_path: Path,
@@ -49,6 +53,23 @@ class PPKSolutionEpoch:
     sdu_m: float
     age_s: float | None
     ratio: float | None
+
+    def to_contract(self) -> dict:
+        return {
+            "schema_version": PPK_OUTPUT_SCHEMA_VERSION,
+            "timestamp_utc": self.timestamp_utc.isoformat(),
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "ellipsoidal_height_m": self.ellipsoidal_height_m,
+            "rtklib_quality": self.rtklib_quality,
+            "rtklib_ns": self.satellites,
+            "rtklib_sdn_m": self.sdn_m,
+            "rtklib_sde_m": self.sde_m,
+            "rtklib_sdu_m": self.sdu_m,
+            "h_acc_m": self.h_acc_m,
+            "rtklib_age_s": self.age_s,
+            "rtklib_ratio": self.ratio,
+        }
 
     @property
     def h_acc_m(self) -> float:

@@ -24,6 +24,8 @@ class MeasurementsWriter:
         rtklib_sdn_m: float | None = None,
         rtklib_sde_m: float | None = None,
         rtklib_sdu_m: float | None = None,
+        source_file: str | None = None,
+        validation_status: str = "unverified",
     ) -> None:
         rows = [
             (device_id, site_id, "displacement", total_mm, "mm"),
@@ -47,7 +49,10 @@ class MeasurementsWriter:
             for quantity, value, unit in optional
             if value is not None
         )
-        await self._insert_rows(timestamp_utc, rows, source_kind="derived")
+        await self._insert_rows(
+            timestamp_utc, rows, source_kind="derived", source_file=source_file,
+            validation_status=validation_status,
+        )
 
     async def write_vibration(
         self, device_id: str, site_id: str, timestamp_utc: datetime, ppa_g: float, ppv_mm_s: float,

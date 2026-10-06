@@ -770,9 +770,12 @@ html[data-variant="editorial"] .ov-title .ov-count{ font-family:'Playfair Displa
   }
 }
 
-/* P0B UX v3 — keep Settings header clear of absolute TopBar */
+/* P0B UX v4 — reserve explicit desktop clearance below the absolute TopBar.
+ * Keep this larger than the shell's generic .l2 offset because Settings starts
+ * with a wrapped back/title row that otherwise touches the TopBar boundary. */
 .settings-page{
-  padding-top:92px;
+  padding-top:112px;
+  scroll-padding-top:112px;
 }
 
 /* P0/P1 acceptance — Settings stays clear of TopBar and remains usable on compact viewports. */
@@ -806,12 +809,34 @@ html[data-variant="editorial"] .ov-title .ov-count{ font-family:'Playfair Displa
   .topnav{ gap:0; }
   .nav-item{ padding:7px; }
   .topright{ margin-left:auto; }
-  .settings-page{ padding-top:76px; }
+  .settings-page{ padding-top:88px; scroll-padding-top:88px; }
   .settings-page .l2head{ gap:10px; }
   .settings-page .l2head h1{ flex:1 1 220px; font-size:16px !important; }
 }
 
 @media (max-height:560px){
-  .settings-page{ padding-top:72px; padding-bottom:28px; }
+  .settings-page{ padding-top:86px; scroll-padding-top:86px; padding-bottom:28px; }
   .settings-card{ margin-top:8px; margin-bottom:20px; padding-top:18px; padding-bottom:24px; }
+}
+
+/* P2 — rover-specific displacement series selector. */
+.ppk-rover-switch{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin:0 0 10px;
+}
+.ppk-rover-switch button{
+  border:1px solid var(--line);
+  background:var(--panel2);
+  color:var(--muted);
+  border-radius:999px;
+  padding:5px 9px;
+  font-size:11px;
+  cursor:pointer;
+}
+.ppk-rover-switch button.on{
+  color:var(--ink);
+  border-color:var(--ink3);
+  background:var(--panel);
 }

@@ -215,6 +215,7 @@ export default function SlopeDetail() {
   const [customTo, setCustomTo] = useState("");
   const [data, setData] = useState(null);
   const [device, setDevice] = useState(null); // isolated sensor group, or null
+  const [selectedRover, setSelectedRover] = useState(null);
   const [detailView, setDetailView] = useState("charts");
   const [tableNow, setTableNow] = useState(() => Date.now());
 
@@ -263,13 +264,31 @@ export default function SlopeDetail() {
   }, [data, live]);
 
   const Q = (q) => (byQ[q] ? byQ[q].pts : []);
+  const roverIds = useMemo(
+    () => [...new Set((data?.device_series || [])
+      .filter((s) => ["displacement", "disp_e", "disp_n", "disp_u"].includes(s.quantity))
+      .map((s) => s.device_id))].sort(),
+    [data],
+  );
+  useEffect(() => {
+    if (!roverIds.length) { setSelectedRover(null); return; }
+    if (!selectedRover || !roverIds.includes(selectedRover)) setSelectedRover(roverIds[0]);
+  }, [roverIds, selectedRover]);
+  const QD = (q) => {
+    if (!selectedRover) return Q(q);
+    const series = (data?.device_series || []).find((s) => s.device_id === selectedRover && s.quantity === q);
+    return series?.points || [];
+  };
 
   const derived = useMemo(() => {
-    const disp = smoothPts(Q("displacement"));
+    const displacement = selectedRover
+      ? ((data?.device_series || []).find((s) => s.device_id === selectedRover && s.quantity === "displacement")?.points || [])
+      : Q("displacement");
+    const disp = smoothPts(displacement);
     const velocity = ratePerDay(disp, 0);
     const acceleration = ratePerDay(smoothPts(velocity), null);
-    return { disp: Q("displacement"), velocity, acceleration };
-  }, [byQ]);
+    return { disp: displacement, velocity, acceleration };
+  }, [byQ, data, selectedRover]);
 
   if (!data) return <div className="loading">Loading {name}…</div>;
 
@@ -287,7 +306,7 @@ export default function SlopeDetail() {
   const presentGroups = GROUPS.filter((g) => g.quantities.some((q) => Q(q).length));
 
   // ---- stat-card scalars ----
-  const dispNow = last(Q("displacement"));
+  const dispNow = last(QD("displacement"));
   const dispStatus = statusFor(th.displacement, dispNow);
   const tiltNow = last(Q("tilt_x"));
   const velNow = last(derived.velocity);
@@ -314,14 +333,14 @@ export default function SlopeDetail() {
   const tempVals = vals(weatherTemp);
   const weatherTempMin = tempVals.length ? Math.floor(Math.min(...tempVals) - 2) : 15;
   const weatherTempMax = tempVals.length ? Math.ceil(Math.max(...tempVals) + 2) : 40;
-  const disp24 = dispNow != null ? dispNow - (valueAt(Q("displacement"), Date.now() - DAY) ?? dispNow) : null;
+  const disp24 = dispNow != null ? dispNow - (valueAt(QD("displacement"), Date.now() - DAY) ?? dispNow) : null;
 
   // ---- inverse-velocity estimate (suppressed if the slope is not accelerating) ----
-  const est = estimateFailure(Q("displacement"));
+  const est = estimateFailure(QD("displacement"));
 
   // ---- per-panel dynamic ranges ----
-  const dispMax = Math.max(15, Math.ceil(maxOf(Q("displacement"), 12) * 1.1));
-  const dispMin = Math.min(-5, Math.floor(minOf(Q("disp_u"), -3)));
+  const dispMax = Math.max(15, Math.ceil(maxOf(QD("displacement"), 12) * 1.1));
+  const dispMin = Math.min(-5, Math.floor(minOf(QD("disp_u"), -3)));
   const tiltMax = Math.max(3, Math.ceil(maxOf(Q("tilt_x"), 2.4) * 1.1));
   const rainMax = Math.max(80, Math.ceil(maxOf(Q("rainfall"), 60) / 10) * 10);
   const velMax = Math.max(20, Math.ceil(maxOf(derived.velocity, 12) / 2) * 2);
@@ -424,7 +443,7 @@ export default function SlopeDetail() {
 
       {/* stat cards */}
       <div className="statcard-row">
-        <StatCard label="3D resultant displacement" value={fmt(dispNow)} sub="mm · threshold 10.00 mm" status={dispStatus} />
+        <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />
         <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="deg · saat ledakan terakhir (bukan real-time)" status={statusFor(th.tilt_x, tiltNow)} />
         <StatCard label="Slope velocity" value={fmt(velNow, 1)} sub={`mm/day · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`} status={velStatus} />
         <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (bukan sensor lapangan)" status="normal" />
@@ -432,8 +451,15 @@ export default function SlopeDetail() {
 
       {/* analytics grid */}
       <div className="analytics-grid">
-        <Panel title="GNSS 3D Displacement" sub="mm vs time" right={readout(dispNow, "mm", dispStatus)}>
+        <Panel title="GNSS 3D Displacement" sub="technical PPK · UNVALIDATED" right={readout(dispNow, "mm", dispStatus)}>
           <div className="panel-body">
+            {roverIds.length > 1 && (
+              <div className="ppk-rover-switch" role="group" aria-label="PPK rover series">
+                {roverIds.map((roverId) => (
+                  <button key={roverId} className={selectedRover === roverId ? "on" : ""} onClick={() => setSelectedRover(roverId)}>{roverId}</button>
+                ))}
+              </div>
+            )}
             <Legend items={[
               { label: "3D resultant", color: col("displacement") },
               { label: "ΔX east", color: col("disp_e"), dash: "dashed" },
@@ -444,10 +470,10 @@ export default function SlopeDetail() {
             <PanelChart height={232}
               left={{ name: "mm", min: dispMin, max: dispMax }}
               series={[
-                { name: "ΔZ vertical", data: Q("disp_u"), color: col("disp_u"), width: 1.4, dash: "dotted", opacity: op("disp_u") },
-                { name: "ΔY north", data: Q("disp_n"), color: col("disp_n"), width: 1.4, dash: "dotted", opacity: op("disp_n") },
-                { name: "ΔX east", data: Q("disp_e"), color: col("disp_e"), width: 1.6, dash: "dashed", opacity: op("disp_e") },
-                { name: "3D resultant", data: Q("displacement"), color: col("displacement"), width: 2.4, z: 3, opacity: op("displacement") },
+                { name: "ΔZ vertical", data: QD("disp_u"), color: col("disp_u"), width: 1.4, dash: "dotted", opacity: op("disp_u") },
+                { name: "ΔY north", data: QD("disp_n"), color: col("disp_n"), width: 1.4, dash: "dotted", opacity: op("disp_n") },
+                { name: "ΔX east", data: QD("disp_e"), color: col("disp_e"), width: 1.6, dash: "dashed", opacity: op("disp_e") },
+                { name: "3D resultant", data: QD("displacement"), color: col("displacement"), width: 2.4, z: 3, opacity: op("displacement") },
               ]}
               bands={[{ from: th.displacement?.bahaya ?? 10, to: dispMax, color: BAND.bahaya }]}
               hlines={[{ y: th.displacement?.bahaya ?? 10, color: STATUS.bahaya, label: (th.displacement?.bahaya ?? 10).toFixed(2) }]}

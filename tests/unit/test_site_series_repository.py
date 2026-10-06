@@ -168,3 +168,16 @@ def test_from_after_to_raises_validation_error():
         assert False, "harusnya raise AppError"
     except AppError:
         pass
+
+
+def test_device_series_keeps_rover_displacement_streams_separate():
+    t0 = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
+    rows = [
+        _row(device_id="ROVER-B1-01", quantity="displacement", unit="mm", time=t0, value=1.0),
+        _row(device_id="ROVER-B1-02", quantity="displacement", unit="mm", time=t0, value=9.0),
+    ]
+    repo = SiteSeriesRepository(_FakePool({"site_id": "SITE-A"}, rows))
+    result = asyncio.run(repo.get_series("SITE-A", hours=24))
+    by_device = {(s["device_id"], s["quantity"]): s for s in result["device_series"]}
+    assert by_device[("ROVER-B1-01", "displacement")]["points"] == [[t0.isoformat(), 1.0]]
+    assert by_device[("ROVER-B1-02", "displacement")]["points"] == [[t0.isoformat(), 9.0]]

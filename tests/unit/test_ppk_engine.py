@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import gzip
 import pytest
 from ml.pipeline.preprocessing.ppk_engine import (
+    PPK_OUTPUT_SCHEMA_VERSION,
     PPKSolveError,
     RTKLibPPKEngine,
     build_convbin_command,
@@ -126,3 +127,16 @@ def test_convbin_command_sets_all_auxiliary_output_paths(tmp_path):
         assert args[args.index(flag) + 1] == str(path)
     assert args[-1] == str(ubx)
     assert "/" not in [args[args.index(flag) + 1] for flag in expected]
+
+
+def test_ppk_solution_contract_v1_is_explicit_and_ellipsoidal():
+    r = parse_pos_line(_GOOD_LINE)
+    contract = r.to_contract()
+    assert contract["schema_version"] == PPK_OUTPUT_SCHEMA_VERSION == "ppk.solution.v1"
+    assert set(contract) == {
+        "schema_version", "timestamp_utc", "latitude", "longitude", "ellipsoidal_height_m",
+        "rtklib_quality", "rtklib_ns", "rtklib_sdn_m", "rtklib_sde_m", "rtklib_sdu_m",
+        "h_acc_m", "rtklib_age_s", "rtklib_ratio",
+    }
+    assert "altitude_m" not in contract
+    assert "gnss_fix_type" not in contract

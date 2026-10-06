@@ -10,6 +10,7 @@ from ml.pipeline.preprocessing.ppk_engine import PPKSolveError
 from services.ingestion_service.raw_staging_repository import RawStagingRepository
 from services.monitoring_service.device_repository import DeviceRepository
 from services.monitoring_service.measurements_writer import MeasurementsWriter
+from services.monitoring_service.ppk_solution_repository import PPKSolutionRepository
 from services.monitoring_service.reference_position_repository import ReferencePositionRepository
 from services.monitoring_service.rover_baseline_repository import RoverBaselineRepository
 
@@ -24,6 +25,7 @@ class CanonicalizationService:
         self._reference = ReferencePositionRepository(pool)
         self._rover_baselines = RoverBaselineRepository(pool)
         self._measurements = MeasurementsWriter(pool)
+        self._ppk_solutions = PPKSolutionRepository(pool)
         self._ppk_engine_factory = ppk_engine_factory
         self._ppk_window_seconds = int(os.getenv("PPK_WINDOW_SECONDS", "300"))
         self._ppk_window_pad_seconds = int(os.getenv("PPK_WINDOW_PAD_SECONDS", "30"))
@@ -136,6 +138,14 @@ class CanonicalizationService:
                 baseline.longitude,
                 baseline.altitude_m,
             )
+            await self._ppk_solutions.write_accepted(
+                site_id=site_id,
+                base_device_id=base_id,
+                rover_device_id=rover_id,
+                solution=solution,
+                result=result,
+                displacement=disp,
+            )
             await self._measurements.write_displacement(
                 device_id=rover_id,
                 site_id=site_id,
@@ -152,6 +162,8 @@ class CanonicalizationService:
                 rtklib_sdn_m=solution.sdn_m,
                 rtklib_sde_m=solution.sde_m,
                 rtklib_sdu_m=solution.sdu_m,
+                source_file="RTKLIB_PPK",
+                validation_status="unverified",
             )
 
     async def handle_position_rows(self, device_id: str, rows: list) -> None:

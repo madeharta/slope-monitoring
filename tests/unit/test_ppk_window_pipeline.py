@@ -36,6 +36,7 @@ def test_dedupe_and_join_sorts_and_deduplicates_exact_epoch_payload_pairs():
 async def test_ppk_window_emits_all_accepted_solution_epochs(monkeypatch):
     monkeypatch.setenv("PPK_MIN_EPOCHS", "2")
     service = CanonicalizationService(None, lambda _: engine)
+    service._ppk_solutions.write_accepted = AsyncMock()
     service._reference.get = AsyncMock(return_value=SimpleNamespace(
         latitude=-6.2, longitude=106.8, altitude_m=500.0, vertical_datum="ELLIPSOIDAL_WGS84"
     ))
@@ -63,6 +64,7 @@ async def test_ppk_window_emits_all_accepted_solution_epochs(monkeypatch):
         window_start=t0, window_end=t0 + timedelta(minutes=5),
     )
     assert service._measurements.write_displacement.await_count == 2
+    assert service._ppk_solutions.write_accepted.await_count == 2
     first = service._measurements.write_displacement.await_args_list[0].kwargs
     assert first["rtklib_quality"] == 1
     assert "gnss_fix_type" not in first
@@ -75,6 +77,7 @@ async def test_ppk_window_emits_all_accepted_solution_epochs(monkeypatch):
 async def test_ppk_quality_gate_rejects_float_without_mislabeling_as_device_fix(monkeypatch):
     monkeypatch.setenv("PPK_MIN_EPOCHS", "2")
     service = CanonicalizationService(None, lambda _: engine)
+    service._ppk_solutions.write_accepted = AsyncMock()
     service._reference.get = AsyncMock(return_value=SimpleNamespace(
         latitude=-6.2, longitude=106.8, altitude_m=500.0, vertical_datum="ELLIPSOIDAL_WGS84"
     ))
@@ -101,6 +104,7 @@ async def test_ppk_quality_gate_rejects_float_without_mislabeling_as_device_fix(
         window_start=t0, window_end=t0 + timedelta(minutes=5),
     )
     service._measurements.write_displacement.assert_not_awaited()
+    service._ppk_solutions.write_accepted.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -125,6 +129,7 @@ async def test_base_arrival_reconciles_rovers_in_same_site(monkeypatch):
 @pytest.mark.asyncio
 async def test_unconfirmed_base_vertical_datum_blocks_ppk(monkeypatch):
     service = CanonicalizationService(None, lambda _: Mock())
+    service._ppk_solutions.write_accepted = AsyncMock()
     service._reference.get = AsyncMock(return_value=SimpleNamespace(
         latitude=-6.2, longitude=106.8, altitude_m=500.0, vertical_datum=None
     ))
