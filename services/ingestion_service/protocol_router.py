@@ -24,7 +24,10 @@ def route_and_parse(headers: UploadHeaders, raw_csv: str) -> ParsedUpload:
         parsed = lora_parser.parse_combined_gnss_csv(raw_csv, base_device_id=headers.device_id)
         return ParsedUpload(rawx_rows=parsed.rawx_rows, position_rows=parsed.position_rows)
     if key == ("lora", "accel", "rover"):
-        return ParsedUpload(accel_rows=lora_parser.parse_accel_csv(raw_csv))
+        return ParsedUpload(
+            accel_rows=lora_parser.parse_accel_csv(raw_csv),
+            position_rows=lora_parser.parse_accel_latest_position(raw_csv),
+        )
     raise InvalidCsvError(
         "unsupported upload combination: "
         f"mode={headers.communication_mode}, data_type={headers.data_type}, role={headers.device_role}"

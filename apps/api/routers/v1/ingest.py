@@ -86,7 +86,12 @@ async def upload_data(file_name: str, request: Request) -> Response:
             for rover_device_id, rows in by_device.items():
                 await canon.handle_position_rows(device_id=rover_device_id, rows=rows)
         if parsed.accel_rows:
-            await canon.handle_accel_rows(device_id=headers.device_id, rows=parsed.accel_rows)
+            await canon.handle_accel_rows(
+                device_id=headers.device_id,
+                rows=parsed.accel_rows,
+                file_name=headers.file_name,
+                communication_mode=headers.communication_mode,
+            )
         if parsed.blast_rawx_rows:
             await RawStagingRepository(pool).insert_gnss_raw_batch([
                 (device_id, ts, raw, headers.file_name) for device_id, ts, raw in parsed.blast_rawx_rows
