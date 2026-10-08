@@ -23,8 +23,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from apps.api.config import ACTION, THRESHOLDS, status_for, worst
+from apps.api.config import ACTION, THRESHOLDS
 from common.errors import AppError, ErrorCode, NotFoundError
+from services.dashboard_service.technical_status import evaluate_current_technical_status
 
 
 class SiteSeriesRepository:
@@ -45,6 +46,27 @@ class SiteSeriesRepository:
             site = await conn.fetchrow("SELECT site_id FROM sites WHERE site_id = $1", site_id)
             if site is None:
                 raise NotFoundError("site", site_id)
+
+            # Current technical severity is intentionally independent from the
+            # selected chart window. Query the newest threshold-bearing rows
+            # for this site, then apply the same canonical freshness semantics
+            # used by Overview. External weather and other non-threshold series
+            # remain chartable but cannot manufacture a current NORMAL state.
+            status_rows = await conn.fetch(
+                """
+                SELECT DISTINCT ON (device_id, quantity)
+                    device_id, site_id, quantity, value, unit, time
+                FROM measurements
+                WHERE site_id = $1
+                  AND quantity = ANY($2::text[])
+                  AND (quantity NOT IN ('displacement', 'disp_e', 'disp_n', 'disp_u')
+                       OR EXISTS (SELECT 1 FROM rover_displacement_baselines b
+                                  WHERE b.device_id = measurements.device_id
+                                    AND measurements.time >= b.approved_at))
+                ORDER BY device_id, quantity, time DESC
+                """,
+                site_id, list(THRESHOLDS.keys()),
+            )
 
             if from_time is not None and to_time is not None:
                 if from_time >= to_time:
@@ -81,7 +103,6 @@ class SiteSeriesRepository:
 
         series_by_quantity: dict[str, dict] = {}
         device_series_by_key: dict[tuple[str, str], dict] = {}
-        latest_by_device_quantity: dict[tuple[str | None, str], float | None] = {}
         for r in rows:
             q = r["quantity"]
             device_id = r.get("device_id") if hasattr(r, "get") else None
@@ -95,17 +116,18 @@ class SiteSeriesRepository:
                         "device_id": device_id, "quantity": q, "unit": r["unit"], "points": [],
                     }
                 device_series_by_key[key]["points"].append([r["time"].isoformat(), r["value"]])
-            latest_by_device_quantity[(device_id, q)] = r["value"]
 
-        # Evaluate technical status per device+quantity so two rover streams are
-        # never collapsed before the worst-status reduction.
-        statuses = [status_for(q, value) for (_device_id, q), value in latest_by_device_quantity.items()]
-        site_status = worst(statuses) if statuses else "unknown"
+        technical = evaluate_current_technical_status(status_rows)
+        site_status = technical["technical_status"]
 
         return {
             "series": list(series_by_quantity.values()),
             "device_series": list(device_series_by_key.values()),
             "status": site_status,
+            "technical_status": site_status,
+            "technical_data_status": technical["technical_data_status"],
+            "reading": technical["reading"],
+            "latest_stale_reading": technical["latest_stale_reading"],
             "action": ACTION.get(site_status, "Data belum cukup untuk menetapkan status lereng."),
             "thresholds": THRESHOLDS,
             # Depth-based sensors (piezometer/soil moisture at various

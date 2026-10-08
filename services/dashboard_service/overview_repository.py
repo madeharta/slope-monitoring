@@ -8,33 +8,24 @@ reference, never from the generic site coordinate.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
+
+import os
 
 from apps.api.config import (
     THRESHOLDS,
     action_for,
     operational_alarm_for,
     operational_alarms_enabled,
-    status_for,
-    worst,
+)
+from services.dashboard_service.technical_status import (
+    evaluate_current_technical_status,
+    measurement_is_current,
+    technical_max_age_seconds,
 )
 
 _ONLINE_WINDOW_SECONDS = int(os.getenv("DEVICE_ONLINE_SECONDS", "900"))
 _OFFLINE_WINDOW_SECONDS = int(os.getenv("DEVICE_OFFLINE_SECONDS", "3600"))
-
-# Current technical severity must be based on measurement time, not on the
-# newest historical row regardless of age. Policies are intentionally
-# quantity-aware: event-derived tilt, displacement, rainfall, and continuous
-# onsite sensors have different temporal semantics.
-_EVENT_TECHNICAL_MAX_AGE_SECONDS = int(os.getenv("TECHNICAL_EVENT_MAX_AGE_SECONDS", "900"))
-_DISPLACEMENT_MAX_AGE_SECONDS = int(os.getenv("TECHNICAL_DISPLACEMENT_MAX_AGE_SECONDS", "1800"))
-_RAINFALL_MAX_AGE_SECONDS = int(os.getenv("TECHNICAL_RAINFALL_MAX_AGE_SECONDS", "3600"))
-_SENSOR_MAX_AGE_SECONDS = int(os.getenv("TECHNICAL_SENSOR_MAX_AGE_SECONDS", "3600"))
-
-_EVENT_DERIVED_QUANTITIES = {"tilt_x", "tilt_y"}
-_DISPLACEMENT_QUANTITIES = {"displacement", "disp_e", "disp_n", "disp_u"}
-_RAINFALL_QUANTITIES = {"rainfall"}
 
 
 def _value(row, key: str, default=None):
@@ -62,39 +53,6 @@ def connectivity_status(last_activity, *, now: datetime | None = None) -> str:
 def _latest_time(*values):
     present = [v for v in values if v is not None]
     return max(present) if present else None
-
-
-def technical_max_age_seconds(quantity: str) -> int:
-    """Return the current-status freshness budget for a quantity.
-
-    This is deliberately not one universal cutoff. Event-derived accelerometer
-    tilt must expire quickly; displacement follows the GNSS/PPK cadence;
-    rainfall follows its own observation window; other continuous sensors use
-    the generic onsite-sensor budget.
-    """
-    if quantity in _EVENT_DERIVED_QUANTITIES:
-        return _EVENT_TECHNICAL_MAX_AGE_SECONDS
-    if quantity in _DISPLACEMENT_QUANTITIES:
-        return _DISPLACEMENT_MAX_AGE_SECONDS
-    if quantity in _RAINFALL_QUANTITIES:
-        return _RAINFALL_MAX_AGE_SECONDS
-    return _SENSOR_MAX_AGE_SECONDS
-
-
-def measurement_is_current(quantity: str, measurement_time, *, now: datetime | None = None) -> bool:
-    """Whether a historical measurement may drive *current* severity.
-
-    Measurement time is authoritative. Received/upload time is intentionally
-    not used as a substitute because delayed/retried uploads must not make an
-    old observation look current.
-    """
-    if measurement_time is None:
-        return False
-    now = now or datetime.now(timezone.utc)
-    if measurement_time.tzinfo is None:
-        measurement_time = measurement_time.replace(tzinfo=timezone.utc)
-    age_s = max(0.0, (now - measurement_time).total_seconds())
-    return age_s <= technical_max_age_seconds(quantity)
 
 
 class OverviewRepository:
@@ -227,30 +185,14 @@ class OverviewRepository:
 
         for site_id, site in site_by_id.items():
             site_readings = readings_by_site.get(site_id, [])
-            current_readings = [
-                r for r in site_readings
-                if measurement_is_current(r["quantity"], r["time"], now=now)
-            ]
-            statuses = [status_for(r["quantity"], r["value"]) for r in current_readings]
-            site_status = worst(statuses) if statuses else "unknown"
+            technical = evaluate_current_technical_status(site_readings, now=now)
+            site_status = technical["technical_status"]
             status_counts[site_status] += 1
 
             operational_alarm = operational_alarm_for(site_status, enabled=operational_ready)
             if operational_alarm:
                 operational_alarm_counts[site_status] += 1
                 operational_alarm_counts["total"] += 1
-
-            representative = None
-            for r in current_readings:
-                if status_for(r["quantity"], r["value"]) == site_status:
-                    representative = r
-                    break
-
-            stale_readings = [r for r in site_readings if r not in current_readings]
-            newest_stale = max(stale_readings, key=lambda r: r["time"], default=None)
-            technical_data_status = (
-                "fresh" if current_readings else "stale" if site_readings else "no_data"
-            )
 
             slopes.append({
                 "site_id": site_id,
@@ -259,30 +201,13 @@ class OverviewRepository:
                 "lon": site["lon"],
                 "status": site_status,
                 "technical_status": site_status,
-                "technical_data_status": technical_data_status,
+                "technical_data_status": technical["technical_data_status"],
                 "validation_status": "validated" if operational_ready else "unvalidated",
                 "operational_ready": operational_ready,
                 "operational_alarm": operational_alarm,
                 "action": action_for(site_status, enabled=operational_ready),
-                "reading": (
-                    {
-                        "value": representative["value"],
-                        "unit": representative["unit"],
-                        "quantity": representative["quantity"],
-                        "time": representative["time"].isoformat(),
-                        "depth_cm": None,
-                    }
-                    if representative is not None else None
-                ),
-                "latest_stale_reading": (
-                    {
-                        "value": newest_stale["value"],
-                        "unit": newest_stale["unit"],
-                        "quantity": newest_stale["quantity"],
-                        "time": newest_stale["time"].isoformat(),
-                    }
-                    if newest_stale is not None and not current_readings else None
-                ),
+                "reading": technical["reading"],
+                "latest_stale_reading": technical["latest_stale_reading"],
             })
 
         online_total = health_breakdown["online"]
