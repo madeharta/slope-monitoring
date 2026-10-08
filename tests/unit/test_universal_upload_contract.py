@@ -1,7 +1,8 @@
 import base64
 import pytest
-from common.errors import InvalidCsvError
+from common.errors import InvalidBase64Error, InvalidCsvError
 from ml.pipeline.preprocessing.g4_parser import parse_accel_csv_single_auxiliary_rawx
+from services.ingestion_service.protocol_router import route_and_parse
 from ml.pipeline.preprocessing.lora_parser import parse_combined_gnss_csv
 from services.ingestion_service.csv_validator import (
     validate_headers,
@@ -74,3 +75,47 @@ def test_4g_blast_requires_exactly_one_auxiliary_rawx():
     assert parsed.auxiliary_rawx[0] == "ROVER-B1-01"
     with pytest.raises(InvalidCsvError):
         parse_accel_csv_single_auxiliary_rawx(header + row0)
+
+
+def test_lora_rover_zero_payload_is_not_base64_decoded():
+    payload = _ubx_b64()
+    csv_text = (
+        "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
+        f"BASE-01,2026-10-08 14:45:00,0,0,0,0,0,{payload}\n"
+        "ROVER-B1-02,2026-10-08 14:45:00,-6.86714790,107.57878470,884.2,3,0.73,0\n"
+    )
+    parsed = parse_combined_gnss_csv(csv_text, base_device_id="BASE-01")
+    assert len(parsed.rawx_rows) == 1
+    assert len(parsed.position_rows) == 1
+    assert parsed.position_rows[0].device_id == "ROVER-B1-02"
+
+
+def test_mixed_lora_gnss_file_rejected_when_header_claims_4g():
+    payload = _ubx_b64()
+    csv_text = (
+        "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
+        f"BASE-01,2026-10-08 14:45:00,0,0,0,0,0,{payload}\n"
+        "ROVER-B1-02,2026-10-08 14:45:00,-6.86714790,107.57878470,884.2,3,0.73,0\n"
+    )
+    headers = validate_headers(_headers(**{
+        "X-Communication-Mode": "4g",
+        "X-Device-Id": "BASE-01",
+        "X-Device-Role": "base",
+        "X-File-Name": "gnss_BASE-01_20261008_1445.csv",
+        "X-Record-Count": "2",
+    }))
+    with pytest.raises(InvalidBase64Error):
+        route_and_parse(headers, csv_text)
+
+
+def test_record_count_counts_all_rows_in_lora_combined_file():
+    header = "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
+    rows = [f"BASE-01,2026-10-08 14:{i:02d}:00,0,0,0,0,0,x" for i in range(20)]
+    rows.extend(
+        f"ROVER-B1-02,2026-10-08 14:{i:02d}:30,-6.8,107.5,884,3,0.7,0"
+        for i in range(11)
+    )
+    csv_text = header + "\n".join(rows) + "\n"
+    assert validate_record_count(csv_text, 31) == 31
+    with pytest.raises(InvalidCsvError, match=r"X-Record-Count=20.*31 data row"):
+        validate_record_count(csv_text, 20)
