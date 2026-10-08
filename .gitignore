@@ -1,43 +1,51 @@
-# Secrets / local config
 .env
-*.env
+.env.*
 !.env.example
-
-# Python
+!.env.docker.example
+.venv/
+.venv-*/
+.venv*/
+venv/
+env/
 __pycache__/
 *.py[cod]
-*.egg-info/
-.eggs/
-.venv/
-venv/
-.ruff_cache/
+*.pyd
 .pytest_cache/
 .mypy_cache/
-
-# PlatformIO
-.pio/
-.pioenvs/
-.piolibdeps/
-
-# Benchmark output / data
-bench/results/
-*.parquet
-*.jsonl
-!*.example.jsonl
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-
-# Docker volumes / local data
-data/
-pgdata/
-
-# Node / frontend build
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+build/
+dist/
+*.egg-info/
+.eggs/
 node_modules/
-frontend/dist/
-
-docs/
-/docs/
+apps/frontend/node_modules/
+apps/frontend/dist/
+*.tsbuildinfo
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+__MACOSX/
+Thumbs.db
+*.log
+logs/
+*.pid
+*.sock
+*.sqlite
+*.sqlite3
+*.db
+tmp/
+temp/
+.cache/
+data/converted_itb_*/
+artifacts/
+docker-compose.override.yml
+compose.override.yml
