@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import "./ppk.css";
@@ -44,7 +44,7 @@ export default function PPK() {
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [requestSeq, setRequestSeq] = useState(0);
+  const initialLoadDone = useRef(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -65,7 +65,11 @@ export default function PPK() {
     }
   }, [authFetch, limit, roverId, siteId]);
 
-  useEffect(() => { load(); }, [load, requestSeq]);
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+    void load();
+  }, [load]);
 
   const rows = payload?.rows || [];
   const contract = payload?.solution_contract || {};
@@ -113,7 +117,7 @@ export default function PPK() {
             {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <button className="admin-btn ppk-refresh" disabled={loading} onClick={() => setRequestSeq((n) => n + 1)}>
+        <button className="admin-btn ppk-refresh" disabled={loading} onClick={load}>
           {loading ? "Memuat…" : "Refresh"}
         </button>
         <div className="ppk-load-note">Tidak ada auto-polling; refresh manual untuk menghindari beban API yang tidak perlu.</div>
