@@ -168,7 +168,7 @@ class CanonicalizationService:
                 validation_status="unverified",
             )
 
-    async def handle_position_rows(self, device_id: str, rows: list) -> None:
+    async def handle_position_rows(self, device_id: str, rows: list, *, file_name: str | None = None) -> None:
         if not rows:
             return
         site_id = await self._devices.get_site_id(device_id)
@@ -187,7 +187,7 @@ class CanonicalizationService:
             position_repo = DevicePositionRepository(self._pool)
             for sample in rows:
                 if sample.gnss_fix_type > 0:
-                    await position_repo.write_rtk_direct(site_id=site_id, sample=sample)
+                    await position_repo.write_rtk_direct(site_id=site_id, sample=sample, source_file=file_name)
 
         baselines = {}
         for rover_id in {sample.device_id for sample in rows}:

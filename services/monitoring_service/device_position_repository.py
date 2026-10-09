@@ -12,7 +12,7 @@ class DevicePositionRepository:
     def __init__(self, pool) -> None:
         self._pool = pool
 
-    async def write_rtk_direct(self, *, site_id: str, sample) -> None:
+    async def write_rtk_direct(self, *, site_id: str, sample, source_file: str | None = None) -> None:
         if sample.gnss_fix_type <= 0:
             return
         if not (-90 <= sample.latitude <= 90 and -180 <= sample.longitude <= 180):
@@ -22,9 +22,9 @@ class DevicePositionRepository:
                 """
                 INSERT INTO device_position_records (
                     time, device_id, site_id, latitude, longitude, altitude_m,
-                    gnss_fix_type, h_acc_m, source_kind, validation_status
+                    gnss_fix_type, h_acc_m, source_kind, validation_status, source_file
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'rtk_direct', 'unvalidated')
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'rtk_direct', 'unvalidated', $9)
                 ON CONFLICT (device_id, time, source_kind) DO UPDATE SET
                     site_id = EXCLUDED.site_id,
                     latitude = EXCLUDED.latitude,
@@ -33,6 +33,7 @@ class DevicePositionRepository:
                     gnss_fix_type = EXCLUDED.gnss_fix_type,
                     h_acc_m = EXCLUDED.h_acc_m,
                     validation_status = 'unvalidated',
+                    source_file = COALESCE(EXCLUDED.source_file, device_position_records.source_file),
                     processed_at = now()
                 """,
                 sample.timestamp_utc,
@@ -43,4 +44,5 @@ class DevicePositionRepository:
                 sample.altitude_m,
                 sample.gnss_fix_type,
                 sample.h_acc_m,
+                source_file,
             )

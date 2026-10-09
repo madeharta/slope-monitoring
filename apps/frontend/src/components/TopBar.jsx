@@ -52,8 +52,9 @@ export default function TopBar() {
     : "";
   const items = [
     { key: "map", label: "Overview", icon: I.dash, onClick: () => { nav("/"); setNav("map"); } },
-    { key: "analytics", label: "Analytics", icon: I.chart, onClick: () => setNav("analytics") },
+    { key: "analytics", label: "Analytics", icon: I.chart, onClick: () => { nav("/sensors"); setNav("analytics"); } },
     { key: "ppk", label: "PPK", icon: I.satellite, onClick: () => { nav("/ppk"); setNav("ppk"); } },
+    { key: "blast", label: "Blast", icon: I.bell, onClick: () => { nav("/blast"); setNav("blast"); } },
     { key: "alarms", label: "Alarms", icon: I.bell, onClick: () => setNav("alarms") },
   ];
   return (
@@ -64,8 +65,8 @@ export default function TopBar() {
       </div>
       <nav className="topnav" aria-label="Primary">
         {items.map((it) => (
-          <button key={it.key} className={"nav-item" + ((navKey === it.key || (it.key === "ppk" && location.pathname.startsWith("/ppk"))) ? " on" : "")}
-            aria-current={(navKey === it.key || (it.key === "ppk" && location.pathname.startsWith("/ppk"))) ? "page" : "false"} onClick={it.onClick}>
+          <button key={it.key} className={"nav-item" + ((navKey === it.key || (it.key === "analytics" && location.pathname.startsWith("/sensors")) || (it.key === "ppk" && location.pathname.startsWith("/ppk")) || (it.key === "blast" && location.pathname.startsWith("/blast"))) ? " on" : "")}
+            aria-current={(navKey === it.key || (it.key === "analytics" && location.pathname.startsWith("/sensors")) || (it.key === "ppk" && location.pathname.startsWith("/ppk")) || (it.key === "blast" && location.pathname.startsWith("/blast"))) ? "page" : "false"} onClick={it.onClick}>
             {it.icon}<span>{it.label}</span>
           </button>
         ))}

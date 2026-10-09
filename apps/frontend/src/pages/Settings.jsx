@@ -6,7 +6,6 @@ const DEVICE_KEYS = [
   { key: "firmware_version", label: "Target firmware version", type: "text" },
   { key: "threshold_g", label: "Threshold accel (g)", type: "number" },
   { key: "time_record_ms", label: "Durasi rekaman ledakan (ms)", type: "number" },
-  { key: "TimeOutTrigger", label: "Timeout trigger (menit)", type: "number" },
 ];
 export default function Settings() {
   const { authFetch, auth } = useAuth();
@@ -109,6 +108,19 @@ export default function Settings() {
                 <SettingRow key={key} label={label} type={type} value={config[key]} onSave={(v) => save(key, v)} saving={saving === key} />
               ))}
             </div>
+            <div className="settings-message" style={{ marginTop: 12 }}>
+              <strong>Blast trigger configuration</strong><br />
+              <code>TriggerStart</code> dan <code>TimeOutTrigger</code> adalah konfigurasi level BASE/site.{" "}
+              Gunakan menu{" "}
+              <button
+                type="button"
+                className="pgdoc-link"
+                onClick={() => navigate("/blast")}
+              >
+                Blast Control
+              </button>{" "}
+              agar write tidak salah diarahkan ke rover.
+            </div>
             <label style={{ fontSize: 13, fontWeight: 600, display: "block", margin: "18px 0 6px" }}>4. Kalibrasi baterai site</label>
             <div className="admin-form">
               {Object.entries(config.battery_cal || {}).map(([deviceId, cal]) => (
@@ -119,7 +131,6 @@ export default function Settings() {
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 16, fontSize: 13 }}>TriggerStart: <strong>{config.TriggerStart ?? 0}</strong></div>
           </>
         )}
         {message && <div className="settings-message" role="status">{message}</div>}

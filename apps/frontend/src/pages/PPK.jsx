@@ -130,7 +130,7 @@ export default function PPK() {
         <Stat label="Production geodetic" value={contract.production_geodetic_validation === true ? "VALIDATED" : "NOT VALIDATED"} detail="surveyed BASE-01 still required" tone="warn" />
       </section>
 
-      <div className="ppk-grid">
+      <div className="ppk-grid ppk-grid--four">
         <section className="panel ppk-card">
           <div className="ppk-card-head">
             <div><h2>Solution quality</h2><span>{rows.length} epoch dari query saat ini</span></div>
@@ -177,9 +177,8 @@ export default function PPK() {
             </div>
           )}
         </section>
-      </div>
 
-      <section className="panel ppk-card ppk-table-card">
+        <section className="panel ppk-card ppk-table-card">
         <div className="ppk-card-head">
           <div><h2>Persisted solution epochs</h2><span>Displacement fields tetap ditampilkan sebagai technical/unvalidated values</span></div>
         </div>
@@ -226,11 +225,12 @@ export default function PPK() {
           </div>
         )}
       </section>
+      </div>
 
-      <section className="panel ppk-card ppk-method-note">
-        <h2>Interpretation guard</h2>
+      <details className="panel ppk-card ppk-method-note">
+        <summary>Data Limitations &amp; Interpretation</summary>
         <p><b>Base-reference type dan source/receiver time-integrity tidak dipersist oleh endpoint <code>ppk.solution.v1</code> saat ini.</b> Halaman ini sengaja tidak menebak atau mengisi nilai tersebut. Evidence engine acceptance harus dibaca dari acceptance artifact, sedangkan production acceptance tetap memerlukan surveyed BASE-01 ellipsoidal coordinates.</p>
-      </section>
+      </details>
     </div>
   );
 
