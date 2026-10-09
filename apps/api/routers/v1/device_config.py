@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from apps.api.dependencies import get_db_pool, require_role
 from common.audit import AuditLog
@@ -23,6 +23,19 @@ async def get_device_config_compat(request: Request, x_device_id: str | None = H
 class ConfigPushRequest(BaseModel):
     config_key: str
     config_value: Any
+
+_BLAST_GLOBAL_KEYS = {"TriggerStart", "TimeOutTrigger"}
+
+def _assert_generic_write_allowed(config_key: str) -> None:
+    if config_key in _BLAST_GLOBAL_KEYS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{config_key} is a site-level blast control. "
+                "Use /api/v1/blast/trigger or /api/v1/blast/reset."
+            ),
+        )
+
 @router.put("/config/{device_id}")
 async def push_device_config(
     device_id: str,
@@ -30,6 +43,8 @@ async def push_device_config(
     request: Request,
     user: TokenPayload = Depends(require_role("operator")),
 ) -> dict:
+    _assert_generic_write_allowed(body.config_key)
+
     pool = get_db_pool(request)
     await DeviceConfigRepository(pool).write_value(
         ConfigWrite(device_id=device_id, config_key=body.config_key, config_value=body.config_value, updated_by=user.sub)

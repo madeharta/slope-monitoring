@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -83,7 +83,7 @@ def test_response_always_has_the_four_fields_slopedetail_needs():
 
 
 def test_status_reflects_latest_reading_bahaya_threshold():
-    t0 = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
+    t0 = datetime.now(timezone.utc)
     rows = [_row(quantity="displacement", unit="mm", time=t0, value=111.0)]
     repo = SiteSeriesRepository(_FakePool({"site_id": "SITE-A"}, rows))
     result = asyncio.run(repo.get_series("SITE-A", hours=24))
@@ -181,3 +181,63 @@ def test_device_series_keeps_rover_displacement_streams_separate():
     by_device = {(s["device_id"], s["quantity"]): s for s in result["device_series"]}
     assert by_device[("ROVER-B1-01", "displacement")]["points"] == [[t0.isoformat(), 1.0]]
     assert by_device[("ROVER-B1-02", "displacement")]["points"] == [[t0.isoformat(), 9.0]]
+
+
+def test_stale_bahaya_plus_fresh_external_weather_is_unknown_stale():
+    now = datetime.now(timezone.utc)
+    rows = [
+        _row(device_id="ROVER-B1-01", quantity="tilt_x", unit="deg",
+             time=now - timedelta(days=10), value=4.520482155696879),
+        _row(device_id="WEATHER-API", quantity="temperature_external", unit="degC",
+             time=now, value=28.5),
+    ]
+    repo = SiteSeriesRepository(_FakePool({"site_id": "ITB-STAGING-01"}, rows))
+    result = asyncio.run(repo.get_series("ITB-STAGING-01", hours=24))
+
+    assert result["status"] == "unknown"
+    assert result["technical_status"] == "unknown"
+    assert result["technical_data_status"] == "stale"
+    assert result["reading"] is None
+    assert result["latest_stale_reading"]["quantity"] == "tilt_x"
+    assert result["latest_stale_reading"]["value"] == pytest.approx(4.520482155696879)
+    assert "temperature_external" in {s["quantity"] for s in result["series"]}
+
+
+def test_external_weather_only_does_not_imply_normal_site_condition():
+    now = datetime.now(timezone.utc)
+    rows = [
+        _row(device_id="WEATHER-API", quantity="temperature_external", unit="degC", time=now, value=27.0),
+        _row(device_id="WEATHER-API", quantity="humidity_external", unit="pct", time=now, value=80.0),
+    ]
+    repo = SiteSeriesRepository(_FakePool({"site_id": "SITE-A"}, rows))
+    result = asyncio.run(repo.get_series("SITE-A", hours=24))
+
+    assert result["status"] == "unknown"
+    assert result["technical_data_status"] == "no_data"
+    assert result["reading"] is None
+
+
+def test_fresh_normal_technical_measurement_is_normal():
+    now = datetime.now(timezone.utc)
+    rows = [_row(device_id="ROVER-B1-01", quantity="tilt_x", unit="deg", time=now, value=0.2)]
+    repo = SiteSeriesRepository(_FakePool({"site_id": "SITE-A"}, rows))
+    result = asyncio.run(repo.get_series("SITE-A", hours=24))
+
+    assert result["status"] == "normal"
+    assert result["technical_data_status"] == "fresh"
+    assert result["reading"]["quantity"] == "tilt_x"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(1.7, "siaga"), (2.5, "bahaya")],
+)
+def test_fresh_threshold_measurement_drives_matching_status(value, expected):
+    now = datetime.now(timezone.utc)
+    rows = [_row(device_id="ROVER-B1-01", quantity="tilt_x", unit="deg", time=now, value=value)]
+    repo = SiteSeriesRepository(_FakePool({"site_id": "SITE-A"}, rows))
+    result = asyncio.run(repo.get_series("SITE-A", hours=24))
+
+    assert result["status"] == expected
+    assert result["technical_status"] == expected
+    assert result["technical_data_status"] == "fresh"

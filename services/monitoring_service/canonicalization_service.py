@@ -5,12 +5,13 @@ from datetime import timedelta
 from common.errors import InvalidCsvError, NotFoundError
 from ml.pipeline.feature_engineering.displacement import compute_displacement_mm
 from ml.pipeline.feature_engineering.tilt import compute_tilt
-from ml.pipeline.feature_engineering.vibration import compute_vibration_metrics
+from ml.pipeline.feature_engineering.vibration import analyze_accel_window, compute_vibration_metrics
 from ml.pipeline.preprocessing.ppk_engine import PPKSolveError
 from services.ingestion_service.raw_staging_repository import RawStagingRepository
 from services.monitoring_service.device_repository import DeviceRepository
 from services.monitoring_service.measurements_writer import MeasurementsWriter
 from services.monitoring_service.ppk_solution_repository import PPKSolutionRepository
+from services.monitoring_service.blast_event_repository import BlastEventRepository
 from services.monitoring_service.reference_position_repository import ReferencePositionRepository
 from services.monitoring_service.rover_baseline_repository import RoverBaselineRepository
 
@@ -26,6 +27,7 @@ class CanonicalizationService:
         self._rover_baselines = RoverBaselineRepository(pool)
         self._measurements = MeasurementsWriter(pool)
         self._ppk_solutions = PPKSolutionRepository(pool)
+        self._blast_events = BlastEventRepository(pool)
         self._ppk_engine_factory = ppk_engine_factory
         self._ppk_window_seconds = int(os.getenv("PPK_WINDOW_SECONDS", "300"))
         self._ppk_window_pad_seconds = int(os.getenv("PPK_WINDOW_PAD_SECONDS", "30"))
@@ -166,7 +168,7 @@ class CanonicalizationService:
                 validation_status="unverified",
             )
 
-    async def handle_position_rows(self, device_id: str, rows: list) -> None:
+    async def handle_position_rows(self, device_id: str, rows: list, *, file_name: str | None = None) -> None:
         if not rows:
             return
         site_id = await self._devices.get_site_id(device_id)
@@ -176,6 +178,17 @@ class CanonicalizationService:
                 raise InvalidCsvError(
                     f"position.csv rover '{rover_id}' belongs to a different site than uploader '{device_id}'"
                 )
+        # Store the latest direct GNSS position independently from displacement.
+        # A valid coordinate is useful for the device map even when the rover
+        # baseline is unavailable or displacement remains UNVALIDATED.
+        if self._pool is not None:
+            from services.monitoring_service.device_position_repository import DevicePositionRepository
+
+            position_repo = DevicePositionRepository(self._pool)
+            for sample in rows:
+                if sample.gnss_fix_type > 0:
+                    await position_repo.write_rtk_direct(site_id=site_id, sample=sample, source_file=file_name)
+
         baselines = {}
         for rover_id in {sample.device_id for sample in rows}:
             try:
@@ -214,21 +227,79 @@ class CanonicalizationService:
 
     async def handle_accel_rows(
         self, device_id: str, rows: list, blast_command_id: int | None = None,
+        *, file_name: str, communication_mode: str,
     ) -> None:
         if not rows:
             return
-        await self._raw.insert_accel_raw_batch(device_id, rows, blast_command_id=blast_command_id)
+        sample_devices = {sample.device_id for sample in rows}
+        if sample_devices != {device_id}:
+            raise InvalidCsvError(
+                f"accelerometer CSV device_id mismatch: upload header={device_id}, rows={sorted(sample_devices)}"
+            )
+        await self._raw.insert_accel_raw_batch(
+            device_id, rows, blast_command_id=blast_command_id, file_name=file_name,
+        )
         site_id = await self._devices.get_site_id(device_id)
-        metrics = compute_vibration_metrics(rows, sensor="adxl355")
+        quality = analyze_accel_window(rows)
         event_time = rows[0].timestamp_utc
+        event_end = rows[-1].timestamp_utc
+
+        adxl_metrics = None
+        mpu_metrics = None
+        if quality.quality_gate_status != "rejected":
+            adxl_metrics = compute_vibration_metrics(rows, sensor="adxl355")
+            mpu_metrics = compute_vibration_metrics(rows, sensor="mpu9250")
+
+        await self._blast_events.write_event(
+            site_id=site_id,
+            device_id=device_id,
+            source_file=file_name,
+            communication_mode=communication_mode,
+            event_start=event_time,
+            event_end=event_end,
+            sample_count=quality.sample_count,
+            duration_ms=quality.duration_ms,
+            observed_sample_rate_hz=quality.observed_sample_rate_hz,
+            median_gap_ms=quality.median_gap_ms,
+            max_gap_ms=quality.max_gap_ms,
+            quality_gate_status=quality.quality_gate_status,
+            quality_reasons=quality.reasons,
+            adxl355_ppa_g=(adxl_metrics.ppa_g if adxl_metrics else None),
+            adxl355_ppv_mm_s=(adxl_metrics.ppv_mm_s if adxl_metrics else None),
+            mpu9250_ppa_g=(mpu_metrics.ppa_g if mpu_metrics else None),
+            mpu9250_ppv_mm_s=(mpu_metrics.ppv_mm_s if mpu_metrics else None),
+            blast_command_id=blast_command_id,
+        )
+
+        if adxl_metrics is None or mpu_metrics is None:
+            logger.warning(
+                "accelerometer event %s rejected by quality gate: %s",
+                file_name, ",".join(quality.reasons),
+            )
+            return
+
         await self._measurements.write_vibration(
-            device_id=device_id, site_id=site_id, timestamp_utc=event_time,
-            ppa_g=metrics.ppa_g, ppv_mm_s=metrics.ppv_mm_s,
+            device_id=device_id,
+            site_id=site_id,
+            timestamp_utc=event_time,
+            ppa_g=adxl_metrics.ppa_g,
+            ppv_mm_s=adxl_metrics.ppv_mm_s,
+            ppa_mpu9250_g=mpu_metrics.ppa_g,
+            ppv_mpu9250_mm_s=mpu_metrics.ppv_mm_s,
+            sample_rate_hz=quality.observed_sample_rate_hz,
+            duration_ms=quality.duration_ms,
+            source_file=file_name,
+            validation_status="unverified",
         )
         tilt = compute_tilt(rows, sensor="adxl355")
         await self._measurements.write_tilt(
-            device_id=device_id, site_id=site_id, timestamp_utc=event_time,
-            tilt_x_deg=tilt.tilt_x_deg, tilt_y_deg=tilt.tilt_y_deg,
+            device_id=device_id,
+            site_id=site_id,
+            timestamp_utc=event_time,
+            tilt_x_deg=tilt.tilt_x_deg,
+            tilt_y_deg=tilt.tilt_y_deg,
+            source_file=file_name,
+            validation_status="unverified",
         )
 
 

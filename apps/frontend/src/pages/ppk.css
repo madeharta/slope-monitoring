@@ -1,0 +1,92 @@
+/* PPK technical QA — production validation remains fail-closed */
+.ppk-page{ padding-bottom:48px; }
+.ppk-warning{ max-width:1500px; margin:0 auto 14px; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; border:1px solid #b88b43; border-radius:10px; background:#35240c; color:#ffe7ac; font-size:12px; line-height:1.5; }
+.ppk-warning strong{ letter-spacing:.08em; font-size:11px; }
+.ppk-filter-panel{ max-width:1500px; margin:0 auto 14px; padding:14px; display:grid; grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) 110px auto minmax(220px,1.3fr); gap:10px; align-items:end; }
+.ppk-filter-panel label{ display:grid; gap:6px; color:var(--ink-3); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; }
+.ppk-filter-panel input,.ppk-filter-panel select{ height:36px; border:1px solid var(--line); border-radius:8px; background:var(--panel-2); color:var(--ink); padding:0 10px; }
+.ppk-refresh{
+  min-height:36px;
+  background:#f4f4f5;
+  color:#111113;
+  border-color:#f4f4f5;
+  font-weight:700;
+}
+.ppk-refresh:hover:not(:disabled){
+  background:#ffffff;
+  color:#09090b;
+}
+.ppk-refresh:focus-visible{
+  outline:2px solid #ffffff;
+  outline-offset:2px;
+}
+.ppk-refresh:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.ppk-load-note{ color:var(--ink-3); font-size:11px; line-height:1.35; align-self:center; }
+.ppk-stat-grid{ max-width:1500px; margin:0 auto 14px; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
+.ppk-stat{ min-height:92px; padding:13px; border:1px solid var(--line); border-radius:10px; background:var(--panel); display:flex; flex-direction:column; gap:6px; }
+.ppk-stat span{ color:var(--ink-3); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; }
+.ppk-stat strong{ color:var(--ink); font-size:14px; overflow-wrap:anywhere; }
+.ppk-stat small{ margin-top:auto; color:var(--ink-3); font-size:10.5px; }
+.ppk-stat.warn{ border-color:rgba(184,139,67,.55); }
+.ppk-stat.danger{ border-color:rgba(220,70,70,.65); }
+.ppk-grid{ max-width:1500px; margin:0 auto 14px; display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.ppk-grid--four{ align-items:start; }
+.ppk-grid--four .ppk-card{ min-width:0; }
+.ppk-grid--four .ppk-table-card{ min-width:0; }
+.ppk-card{ max-width:1500px; margin:0 auto 14px; padding:16px; }
+.ppk-grid .ppk-card{ margin:0; }
+.ppk-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.ppk-card-head h2,.ppk-method-note h2{ margin:0; font-size:14px; font-weight:650; }
+.ppk-card-head span{ display:block; margin-top:4px; color:var(--ink-3); font-size:11px; }
+.ppk-empty{ min-height:96px; display:flex; flex-direction:column; justify-content:center; gap:6px; padding:16px; border:1px dashed var(--line); border-radius:9px; color:var(--ink-3); font-size:12px; }
+.ppk-empty strong{ color:var(--ink-2); }
+.ppk-quality-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.ppk-quality{ padding:11px; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; display:flex; justify-content:space-between; align-items:center; }
+.ppk-quality span{ color:var(--ink-3); font-size:10.5px; }
+.ppk-quality strong{ font-size:18px; }
+.ppk-quality.q1{ border-color:rgba(65,180,120,.5); }
+.ppk-quality.q2{ border-color:rgba(184,139,67,.5); }
+.ppk-metrics-line{ margin-top:10px; display:flex; gap:18px; color:var(--ink-3); font-size:11px; }
+.ppk-metrics-line b{ color:var(--ink-2); }
+.ppk-latest{ display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; }
+.ppk-latest > div{ display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); }
+.ppk-latest span{ color:var(--ink-3); font-size:11px; }
+.ppk-latest b{ color:var(--ink-2); font-size:11px; font-family:var(--mono); text-align:right; }
+.ppk-table-card{ overflow:hidden; }
+.ppk-table-scroll{ overflow:auto; max-height:50vh; }
+.ppk-table{ min-width:1350px; }
+.ppk-table th{ position:sticky; top:0; z-index:1; background:var(--panel-2); }
+.ppk-validation-chip,.ppk-prov-ok,.ppk-prov-missing{ display:inline-flex; padding:3px 7px; border-radius:999px; font-size:10px; border:1px solid var(--line); }
+.ppk-validation-chip{ color:#ffe7ac; border-color:rgba(184,139,67,.45); background:rgba(184,139,67,.10); }
+.ppk-prov-ok{ color:#bdeed4; border-color:rgba(65,180,120,.45); background:rgba(65,180,120,.08); }
+.ppk-prov-missing{ color:#ffc1c1; border-color:rgba(220,70,70,.45); background:rgba(220,70,70,.08); }
+.ppk-hashes{ display:grid; grid-template-columns:1fr 1fr; gap:0 18px; }
+.ppk-hash-row{ min-width:0; display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); }
+.ppk-hash-row span{ color:var(--ink-3); font-size:10.5px; overflow-wrap:anywhere; }
+.ppk-hash-row code{ color:var(--ink-2); font-size:10.5px; white-space:nowrap; }
+.ppk-method-note{
+  max-width:1500px;
+  margin:0 auto 14px;
+}
+.ppk-method-note summary{
+  cursor:pointer;
+  color:var(--ink-2);
+  font-size:12px;
+  font-weight:650;
+}
+.ppk-method-note summary:focus-visible{
+  outline:2px solid var(--line-strong);
+  outline-offset:3px;
+  border-radius:4px;
+}
+.ppk-method-note p{ margin:10px 0 0; color:var(--ink-3); font-size:12px; line-height:1.55; }
+.ppk-method-note b{ color:var(--ink-2); }
+.ppk-method-note code{ font-family:var(--mono); color:var(--ink-2); }
+.ppk-overview-copy{ color:var(--ink-3); font-size:11px; line-height:1.45; }
+.ppk-overview-link{ margin-top:10px; padding:7px 9px; border:1px solid var(--line); border-radius:7px; background:var(--panel-2); color:var(--ink-2); cursor:pointer; font-size:11px; }
+.ppk-overview-link:hover{ color:var(--ink); border-color:var(--line-strong); }
+@media (max-width:1200px){ .ppk-stat-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); } .ppk-filter-panel{ grid-template-columns:1fr 1fr 100px auto; } .ppk-load-note{ grid-column:1/-1; } }
+@media (max-width:800px){ .ppk-grid{ grid-template-columns:1fr; } .ppk-stat-grid{ grid-template-columns:1fr 1fr; } .ppk-filter-panel{ grid-template-columns:1fr; } .ppk-hashes{ grid-template-columns:1fr; } .ppk-latest{ grid-template-columns:1fr; } }

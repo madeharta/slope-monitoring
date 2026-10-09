@@ -101,6 +101,8 @@ export default function Overview() {
   const slopes = overview?.slopes || [];
   const c = overview?.status_counts || { normal: 0, siaga: 0, bahaya: 0, unknown: 0 };
   const health = overview?.health || { online: 0, offline: 0, total: 0 };
+  const deviceHealth = overview?.device_health || { online: health.online || 0, stale: 0, offline: health.offline || 0, unknown: 0, total: health.total || 0 };
+  const devices = overview?.devices || [];
   const operationalCounts = overview?.operational_alarm_counts || {
     siaga: 0, bahaya: 0, total: 0,
   };
@@ -161,7 +163,7 @@ export default function Overview() {
       <div role="status" style={{position:"fixed",top:64,left:16,zIndex:1000,background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43",borderRadius:6,maxWidth:510,fontSize:12}}>
         UNVALIDATED — Siaga/Bahaya adalah severity teknis untuk QA/riset. Alarm dan instruksi operasional disuppress sampai field, PPK, dan baseline acceptance disetujui.
       </div>
-      <div className="mapwrap"><SiteMap slopes={slopes} /></div>
+      <div className="mapwrap"><SiteMap slopes={slopes} devices={devices} /></div>
       <div className="scrim" />
 
       {/* LEFT — editorial headline + active-alarm cards, floating over the map */}
@@ -206,7 +208,9 @@ export default function Overview() {
           </span>
         </div>
         <span className="vdiv" />
-        <div className="fstat"><span className="fs-v">{health.online}<i>/{health.total}</i></span><span className="fs-k">Devices online</span></div>
+        <div className="fstat"><span className="fs-v">{deviceHealth.online}<i>/{deviceHealth.total}</i></span><span className="fs-k">Devices online</span></div>
+        <div className="fstat"><span className="fs-v warn">{deviceHealth.stale}</span><span className="fs-k">Devices stale</span></div>
+        <div className="fstat"><span className="fs-v">{deviceHealth.offline + deviceHealth.unknown}</span><span className="fs-k">Offline / unknown</span></div>
         <div className="fstat"><span className="fs-v warn">{c.siaga}</span><span className="fs-k">Teknis Siaga</span></div>
         <div className="fstat"><span className="fs-v crit">{c.bahaya}</span><span className="fs-k">Teknis Bahaya</span></div>
       </div>
@@ -220,6 +224,13 @@ export default function Overview() {
         <div className="wcard">
           <div className="wcard-h"><h3>Vibration (PPV) live</h3><span className="wgic">⋯</span></div>
           <div className="wcard-b"><Spark data={vibArr} c={pal.spark} area={pal.area} /></div>
+        </div>
+        <div className="wcard ppk-overview-card">
+          <div className="wcard-h"><h3>PPK technical results</h3><span className="wgic">ⓘ</span></div>
+          <div className="wcard-b">
+            <div className="ppk-overview-copy">PPK output is UNVALIDATED for production displacement. View the locked solution contract, RTKLIB quality, and reproducibility provenance without changing operational alarm state.</div>
+            <button className="ppk-overview-link" onClick={() => nav("/ppk")}>Open PPK QA →</button>
+          </div>
         </div>
         <div className="wcard">
           <div className="wcard-h"><h3>Technical Status Summary</h3></div>

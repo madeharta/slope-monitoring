@@ -55,22 +55,41 @@ class MeasurementsWriter:
         )
 
     async def write_vibration(
-        self, device_id: str, site_id: str, timestamp_utc: datetime, ppa_g: float, ppv_mm_s: float,
+        self, device_id: str, site_id: str, timestamp_utc: datetime,
+        ppa_g: float, ppv_mm_s: float,
+        *, ppa_mpu9250_g: float | None = None, ppv_mpu9250_mm_s: float | None = None,
+        sample_rate_hz: float | None = None, duration_ms: float | None = None,
+        source_file: str | None = None, validation_status: str = "unverified",
     ) -> None:
         rows = [
             (device_id, site_id, "ppa", ppa_g, "g"),
             (device_id, site_id, "ppv", ppv_mm_s, "mm/s"),
         ]
-        await self._insert_rows(timestamp_utc, rows, source_kind="derived")
+        if ppa_mpu9250_g is not None:
+            rows.append((device_id, site_id, "ppa_mpu9250", ppa_mpu9250_g, "g"))
+        if ppv_mpu9250_mm_s is not None:
+            rows.append((device_id, site_id, "ppv_mpu9250", ppv_mpu9250_mm_s, "mm/s"))
+        if sample_rate_hz is not None:
+            rows.append((device_id, site_id, "accel_sample_rate", sample_rate_hz, "Hz"))
+        if duration_ms is not None:
+            rows.append((device_id, site_id, "accel_window_duration", duration_ms, "ms"))
+        await self._insert_rows(
+            timestamp_utc, rows, source_kind="derived", source_file=source_file,
+            validation_status=validation_status,
+        )
 
     async def write_tilt(
         self, device_id: str, site_id: str, timestamp_utc: datetime, tilt_x_deg: float, tilt_y_deg: float,
+        *, source_file: str | None = None, validation_status: str = "unverified",
     ) -> None:
         rows = [
             (device_id, site_id, "tilt_x", tilt_x_deg, "deg"),
             (device_id, site_id, "tilt_y", tilt_y_deg, "deg"),
         ]
-        await self._insert_rows(timestamp_utc, rows, source_kind="derived")
+        await self._insert_rows(
+            timestamp_utc, rows, source_kind="derived", source_file=source_file,
+            validation_status=validation_status,
+        )
 
     async def write_weather(
         self, site_id: str, timestamp_utc: datetime, rainfall_mm: float, temperature_c: float, humidity_pct: float,

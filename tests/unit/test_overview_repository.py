@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from services.dashboard_service.overview_repository import OverviewRepository
+from services.dashboard_service.overview_repository import OverviewRepository, measurement_is_current
 
 
 class _FakeConn:
@@ -103,3 +103,60 @@ def test_normal_reading_does_not_inflate_bahaya_count():
 
     assert result["slopes"][0]["status"] == "normal"
     assert result["status_counts"] == {"normal": 1, "siaga": 0, "bahaya": 0, "unknown": 0}
+
+
+def test_fresh_bahaya_tilt_drives_current_technical_status():
+    now = datetime.now(timezone.utc)
+    sites = [_row(site_id="lereng-a", name="Slope A", lat=-6.2, lon=106.8)]
+    devices = [_row(device_id="ROVER-01", site_id="lereng-a", online=True)]
+    readings = [_row(
+        device_id="ROVER-01", site_id="lereng-a", quantity="tilt_x",
+        value=4.52, unit="deg", time=now - timedelta(seconds=60),
+    )]
+
+    result = asyncio.run(OverviewRepository(_FakePool([sites, devices, readings])).get_overview())
+
+    slope = result["slopes"][0]
+    assert slope["technical_status"] == "bahaya"
+    assert slope["technical_data_status"] == "fresh"
+    assert slope["reading"]["quantity"] == "tilt_x"
+
+
+def test_fresh_siaga_tilt_drives_current_technical_status():
+    now = datetime.now(timezone.utc)
+    sites = [_row(site_id="lereng-a", name="Slope A", lat=-6.2, lon=106.8)]
+    devices = [_row(device_id="ROVER-01", site_id="lereng-a", online=True)]
+    readings = [_row(
+        device_id="ROVER-01", site_id="lereng-a", quantity="tilt_x",
+        value=1.75, unit="deg", time=now - timedelta(seconds=60),
+    )]
+
+    result = asyncio.run(OverviewRepository(_FakePool([sites, devices, readings])).get_overview())
+
+    assert result["slopes"][0]["technical_status"] == "siaga"
+
+
+def test_stale_bahaya_tilt_does_not_drive_current_status_and_remains_visible_as_stale():
+    stale_time = datetime.now(timezone.utc) - timedelta(days=10)
+    sites = [_row(site_id="lereng-a", name="Slope A", lat=-6.2, lon=106.8)]
+    devices = [_row(device_id="ROVER-01", site_id="lereng-a", online=True)]
+    readings = [_row(
+        device_id="ROVER-01", site_id="lereng-a", quantity="tilt_x",
+        value=4.520482155696879, unit="deg", time=stale_time,
+    )]
+
+    result = asyncio.run(OverviewRepository(_FakePool([sites, devices, readings])).get_overview())
+
+    slope = result["slopes"][0]
+    assert slope["technical_status"] == "unknown"
+    assert slope["technical_data_status"] == "stale"
+    assert slope["reading"] is None
+    assert slope["latest_stale_reading"]["value"] == 4.520482155696879
+    assert slope["latest_stale_reading"]["quantity"] == "tilt_x"
+    assert slope["operational_alarm"] is False
+
+
+def test_measurement_freshness_uses_measurement_time_not_upload_time():
+    now = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
+    assert measurement_is_current("tilt_x", now - timedelta(minutes=5), now=now) is True
+    assert measurement_is_current("tilt_x", now - timedelta(days=10), now=now) is False

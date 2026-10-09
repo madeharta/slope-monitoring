@@ -14,6 +14,9 @@ import Sites from "./pages/Sites.jsx";
 import Users from "./pages/Users.jsx";
 import Uploads from "./pages/Uploads.jsx";
 import MFAEnroll from "./pages/MFAEnroll.jsx";
+import PPK from "./pages/PPK.jsx";
+import BlastControl from "./pages/BlastControl.jsx";
+import SensorMonitoring from "./pages/SensorMonitoring.jsx";
 import RequireAuth from "./context/RequireAuth.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 function AuthenticatedApp() {
@@ -36,6 +39,9 @@ function AuthenticatedApp() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/uploads" element={<Uploads />} />
+          <Route path="/ppk" element={<PPK />} />
+            <Route path="/blast" element={<BlastControl />} />
+            <Route path="/sensors" element={<SensorMonitoring />} />
         </Routes>
       </div>
       <TopBar />

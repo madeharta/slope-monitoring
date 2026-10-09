@@ -101,12 +101,12 @@ function accumulate(pts) {
 const GROUP_OF = {
   displacement: "gnss", disp_e: "gnss", disp_n: "gnss", disp_u: "gnss",
   velocity: "gnss", acceleration: "gnss",
-  tilt_x: "accel", tilt_y: "accel", vibration: "accel",
+  tilt_x: "accel", tilt_y: "accel", ppa: "accel", ppv: "accel", ppa_mpu9250: "accel", ppv_mpu9250: "accel",
   rainfall: "rain", pore_pressure: "piezo", suction: "piezo", soil_moisture: "soil",
 };
 const GROUPS = [
   { key: "gnss", label: "GNSS rover", quantities: ["displacement"] },
-  { key: "accel", label: "Accelerometer", quantities: ["tilt_x", "tilt_y"] },
+  { key: "accel", label: "Accelerometer", quantities: ["tilt_x", "tilt_y", "ppa", "ppv"] },
   { key: "rain", label: "Rain gauge", quantities: ["rainfall"] },
   { key: "piezo", label: "Piezometer", quantities: ["pore_pressure", "suction"] },
   { key: "soil", label: "Soil moisture", quantities: ["soil_moisture"] },
@@ -344,10 +344,8 @@ export default function SlopeDetail() {
   const tiltMax = Math.max(3, Math.ceil(maxOf(Q("tilt_x"), 2.4) * 1.1));
   const rainMax = Math.max(80, Math.ceil(maxOf(Q("rainfall"), 60) / 10) * 10);
   const velMax = Math.max(20, Math.ceil(maxOf(derived.velocity, 12) / 2) * 2);
-
-  // vibration spikes -> anomaly markers (a few most-recent)
-  const vlines = Q("vibration").filter((p) => p[1] != null && p[1] > 20).slice(-3)
-    .map((p) => ({ x: p[0], color: STATUS.siaga, label: `${p[1].toFixed(1)} Hz` }));
+  const ppaMax = Math.max(1, Math.ceil(Math.max(maxOf(Q("ppa"), 0), maxOf(Q("ppa_mpu9250"), 0)) * 1.2 * 10) / 10);
+  const ppvMax = Math.max(10, Math.ceil(Math.max(maxOf(Q("ppv"), 0), maxOf(Q("ppv_mpu9250"), 0)) * 1.2 / 10) * 10);
 
   const readout = (v, unit, status) => (
     <span style={{ color: status === "bahaya" ? "var(--bahaya)" : status === "siaga" ? "var(--siaga)" : "var(--ink)" }}>
@@ -481,19 +479,15 @@ export default function SlopeDetail() {
           </div>
         </Panel>
 
-        <Panel title="Accelerometer Tilt & Micro-vibration" sub="ADXL355 / MPU9025" right={readout(tiltNow, "deg", statusFor(th.tilt_x, tiltNow))}>
+        <Panel title="Accelerometer Tilt" sub="ADXL355 · derived · UNVERIFIED" right={readout(tiltNow, "deg", statusFor(th.tilt_x, tiltNow))}>
           <div className="panel-body">
             <Legend items={[
               { label: "Tilt X · deg", color: col("tilt_x") },
               { label: "Tilt Y · deg", color: col("tilt_y"), dash: "dashed" },
-              { label: "Vibration · Hz", color: col("vibration"), kind: "bar" },
-              { label: "Anomaly", color: STATUS.siaga, dash: "dashed" },
             ]} />
             <PanelChart height={232}
               left={{ name: "deg", min: 0, max: tiltMax }}
-              right={{ name: "Hz", min: 0, max: 40 }}
               series={[
-                { name: "Vibration", data: Q("vibration"), color: col("vibration"), width: 1, area: true, axis: 1, opacity: op("vibration") },
                 { name: "Tilt Y", data: Q("tilt_y"), color: col("tilt_y"), width: 1.6, dash: "dashed", opacity: op("tilt_y") },
                 { name: "Tilt X", data: Q("tilt_x"), color: col("tilt_x"), width: 2.4, z: 3, opacity: op("tilt_x") },
               ]}
@@ -501,8 +495,30 @@ export default function SlopeDetail() {
                 { from: th.tilt_x?.siaga ?? 1.5, to: th.tilt_x?.bahaya ?? 2.25, color: BAND.siaga },
                 { from: th.tilt_x?.bahaya ?? 2.25, to: tiltMax, color: BAND.bahaya },
               ]}
-              vlines={vlines}
             />
+            <div className="wx-chart-note">Tilt is derived from acceleration; it is not gyroscope/angular-rate data.</div>
+          </div>
+        </Panel>
+
+        <Panel title="Blast Vibration Metrics" sub="technical event features · UNVALIDATED" right={readout(last(Q("ppv")), "mm/s", "normal")}>
+          <div className="panel-body">
+            <Legend items={[
+              { label: "ADXL355 PPA · g", color: col("ppa") },
+              { label: "MPU9250 PPA · g", color: col("ppa_mpu9250"), dash: "dashed" },
+              { label: "ADXL355 PPV · mm/s", color: col("ppv") },
+              { label: "MPU9250 PPV · mm/s", color: col("ppv_mpu9250"), dash: "dashed" },
+            ]} />
+            <PanelChart height={232}
+              left={{ name: "g", min: 0, max: ppaMax }}
+              right={{ name: "mm/s", min: 0, max: ppvMax }}
+              series={[
+                { name: "MPU9250 PPA", data: Q("ppa_mpu9250"), color: col("ppa_mpu9250"), width: 1.5, dash: "dashed", opacity: op("ppa_mpu9250") },
+                { name: "ADXL355 PPA", data: Q("ppa"), color: col("ppa"), width: 2.2, z: 3, opacity: op("ppa") },
+                { name: "MPU9250 PPV", data: Q("ppv_mpu9250"), color: col("ppv_mpu9250"), width: 1.5, dash: "dashed", axis: 1, opacity: op("ppv_mpu9250") },
+                { name: "ADXL355 PPV", data: Q("ppv"), color: col("ppv"), width: 2.2, axis: 1, z: 3, opacity: op("ppv") },
+              ]}
+            />
+            <div className="wx-chart-note">PPA/PPV are technical features from uploaded acceleration windows. No regulatory/compliance threshold or field-safety claim is applied.</div>
           </div>
         </Panel>
 
