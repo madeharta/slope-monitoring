@@ -27,7 +27,7 @@ class _Pool:
     def acquire(self): return _Ctx(self.conn)
 
 
-def test_write_accepted_persists_schema_quality_and_provenance():
+def test_write_accepted_persists_schema_quality_and_reproducibility_provenance():
     pool = _Pool()
     repo = PPKSolutionRepository(pool)
     solution = PPKSolutionEpoch(
@@ -36,10 +36,21 @@ def test_write_accepted_persists_schema_quality_and_provenance():
         rtklib_quality=1, satellites=12, sdn_m=0.002, sde_m=0.003, sdu_m=0.004,
         age_s=0.5, ratio=12.0,
     )
+    hashes = {name: char * 64 for name, char in (
+        ("base_rawx_sha256", "c"),
+        ("rover_rawx_sha256", "d"),
+        ("base_obs_sha256", "e"),
+        ("rover_obs_sha256", "f"),
+        ("normalized_navigation_sha256", "1"),
+        ("convbin_sha256", "2"),
+        ("rnx2rtkp_sha256", "3"),
+        ("solution_pos_sha256", "4"),
+    )}
     result = PPKWindowResult(
         solutions=(solution,), navigation_sha256="a" * 64,
         navigation_source_url="https://example.test/nav", navigation_provider="BKG_WRD",
         navigation_cache_hit=True, rtklib_config_sha256="b" * 64,
+        **hashes,
     )
     disp = SimpleNamespace(de_mm=1.0, dn_mm=2.0, du_mm=3.0, total_mm=3.741657)
     asyncio.run(repo.write_accepted(
@@ -49,5 +60,14 @@ def test_write_accepted_persists_schema_quality_and_provenance():
     assert "ppk_solution_records" in pool.conn.query
     assert "'accepted', 'unvalidated'" in pool.conn.query
     assert "ppk.solution.v1" in pool.conn.args
+    assert "ELLIPSOIDAL_WGS84" in pool.conn.args
+    assert "RTKLIB" in pool.conn.args
     assert "a" * 64 in pool.conn.args
     assert "b" * 64 in pool.conn.args
+    for value in hashes.values():
+        assert value in pool.conn.args
+    for column in (
+        "base_rawx_sha256", "rover_rawx_sha256", "base_obs_sha256", "rover_obs_sha256",
+        "normalized_navigation_sha256", "convbin_sha256", "rnx2rtkp_sha256", "solution_pos_sha256",
+    ):
+        assert column in pool.conn.query

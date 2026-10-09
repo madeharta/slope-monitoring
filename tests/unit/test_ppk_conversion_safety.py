@@ -8,6 +8,7 @@ import pytest
 from common.errors import NotFoundError
 from ml.pipeline.preprocessing.lora_parser import parse_combined_gnss_csv
 from ml.pipeline.preprocessing.ppk_engine import PPKSolveError, RTKLibPPKEngine
+import scripts.convert_rawx_ppk as convert_rawx_ppk
 from scripts.convert_rawx_ppk import ConversionError, execute, read_rawx
 from services.monitoring_service.canonicalization_service import CanonicalizationService
 FIXTURE = Path(__file__).parents[1] / 'fixtures/itb_real_data/4g_ppk_only.csv'
@@ -179,3 +180,121 @@ def test_base_rover_overlap_gate_uses_rawx_receiver_time_not_csv_clock(tmp_path)
     )
     assert manifest["base"] is not None
     assert manifest["conversion"].startswith("NOT_RUN_CONVBIN_MISSING")
+
+
+
+def test_manifest_classifies_large_but_stable_clock_offset_without_rewriting_time(tmp_path):
+    source = tmp_path / "rawx.csv"
+    payload1 = _rawx_b64(week=2436, tow=1000.0, num_meas=1, leap_s=18, rec_stat=1)
+    payload2 = _rawx_b64(week=2436, tow=1001.0, num_meas=1, leap_s=18, rec_stat=1)
+    _write_rawx_csv(
+        source,
+        "ROVER-B1-01",
+        [
+            ("2026-09-18 12:00:00", payload1),
+            ("2026-09-18 12:00:01", payload2),
+        ],
+    )
+    manifest = execute(source, tmp_path / "output", convbin="/absent/convbin")
+    clock = manifest["time_integrity"]["rover_clock"]
+    assert clock["status"] in {"ALIGNED", "SUSPECT_STABLE_OFFSET"}
+    assert clock["pairing_time_basis"] == "rxm_rawx_gps_seconds"
+
+
+def test_full_pairing_preserves_source_clock_anomaly_but_uses_receiver_time(tmp_path):
+    rover = tmp_path / "rover.csv"
+    base = tmp_path / "base.csv"
+    nav = tmp_path / "nav.rnx"
+    nav.write_text("nonempty nav placeholder")
+    _write_rawx_csv(
+        rover,
+        "ROVER-B1-01",
+        [
+            ("2026-09-18 12:00:00", _rawx_b64(week=2436, tow=1000.0, num_meas=1)),
+            ("2026-09-18 12:00:20", _rawx_b64(week=2436, tow=1001.0, num_meas=1)),
+        ],
+    )
+    _write_rawx_csv(
+        base,
+        "BASE-01",
+        [
+            ("2026-09-18 12:00:00", _rawx_b64(week=2436, tow=1000.0, num_meas=1)),
+            ("2026-09-18 12:00:01", _rawx_b64(week=2436, tow=1001.0, num_meas=1)),
+        ],
+    )
+    manifest = execute(
+        rover,
+        tmp_path / "output",
+        base_input=base,
+        base_coords=(-6.0, 107.0, 100.0),
+        nav=nav,
+        convbin="/absent/convbin",
+        base_reference_type="ENGINE_TEST_SPP_APPROXIMATE",
+    )
+    assert manifest["time_integrity"]["rover_clock"]["status"] == "ANOMALOUS_SOURCE_CLOCK"
+    assert manifest["time_integrity"]["rover_clock"]["acceptance_blocking"] is False
+    assert manifest["time_integrity"]["pairing"]["status"] == "OVERLAP"
+    assert manifest["base_reference"]["type"] == "ENGINE_TEST_SPP_APPROXIMATE"
+    assert manifest["base_reference"]["production_geodetic_validation"] is False
+
+
+def test_full_pairing_rejects_non_monotonic_receiver_time(tmp_path):
+    rover = tmp_path / "rover.csv"
+    base = tmp_path / "base.csv"
+    nav = tmp_path / "nav.rnx"
+    nav.write_text("nonempty nav placeholder")
+    _write_rawx_csv(
+        rover,
+        "ROVER-B1-01",
+        [
+            ("2026-09-18 12:00:00", _rawx_b64(week=2436, tow=1001.0, num_meas=1)),
+            ("2026-09-18 12:00:01", _rawx_b64(week=2436, tow=1000.0, num_meas=1)),
+        ],
+    )
+    _write_rawx_csv(
+        base,
+        "BASE-01",
+        [
+            ("2026-09-18 12:00:00", _rawx_b64(week=2436, tow=1000.0, num_meas=1)),
+            ("2026-09-18 12:00:01", _rawx_b64(week=2436, tow=1001.0, num_meas=1)),
+        ],
+    )
+    with pytest.raises(ConversionError, match="Non-monotonic RXM-RAWX receiver time for rover"):
+        execute(
+            rover,
+            tmp_path / "output",
+            base_input=base,
+            base_coords=(-6.0, 107.0, 100.0),
+            nav=nav,
+            convbin="/absent/convbin",
+            base_reference_type="ENGINE_TEST_SPP_APPROXIMATE",
+        )
+
+
+def test_cli_propagates_base_reference_type(monkeypatch, tmp_path, capsys):
+    captured = {}
+
+    def fake_execute(*args):
+        captured["base_reference_type"] = args[8]
+        return {"engine_acceptance": {"status": "PASS"}}
+
+    monkeypatch.setattr(convert_rawx_ppk, "execute", fake_execute)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "convert_rawx_ppk",
+            "--input", str(tmp_path / "rover.csv"),
+            "--output", str(tmp_path / "out"),
+            "--base-input", str(tmp_path / "base.csv"),
+            "--base-lat", "-6.0",
+            "--base-lon", "107.0",
+            "--base-alt-ellipsoid-m", "100.0",
+            "--nav", str(tmp_path / "nav.rnx"),
+            "--base-reference-type", "ENGINE_TEST_SPP_APPROXIMATE",
+            "--require-engine-pass",
+        ],
+    )
+
+    convert_rawx_ppk.main()
+    capsys.readouterr()
+    assert captured["base_reference_type"] == "ENGINE_TEST_SPP_APPROXIMATE"

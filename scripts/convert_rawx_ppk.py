@@ -15,12 +15,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ml.pipeline.preprocessing.ppk_engine import (
+    PPK_ACCEPTANCE_SCHEMA_VERSION,
+    PPK_ENGINE_NAME,
+    PPK_OUTPUT_SCHEMA_VERSION,
     PPKSolveError,
     build_convbin_command,
     parse_pos_file,
 )
 from scripts.prepare_itb_uploads import ubx_valid
 from services.rinex_service.normalizer import normalize_rinex_transport
+from ml.pipeline.preprocessing.ppk_time_integrity import (
+    assess_clock_deltas,
+    assess_receiver_epochs,
+    assess_receiver_overlap,
+)
 
 GPS_EPOCH = datetime(1980, 1, 6, tzinfo=timezone.utc)
 GPS_WEEK_SECONDS = 604800.0
@@ -165,6 +173,8 @@ def read_rawx(path: Path) -> tuple[str, bytes, dict]:
             if clock_deltas
             else None
         ),
+        "clock_integrity": assess_clock_deltas(clock_deltas),
+        "receiver_time_integrity": assess_receiver_epochs(gps_seconds_values),
         "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
 
@@ -199,6 +209,28 @@ def _binary(value: str) -> str | None:
     return shutil.which(value)
 
 
+
+def _sha256_path(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _binary_identity(path: str) -> dict:
+    resolved = Path(path)
+    return {
+        "path": str(resolved),
+        "sha256": _sha256_path(resolved) if resolved.is_file() else None,
+    }
+
+
+def _engine_acceptance(status: str, **gates) -> dict:
+    return {
+        "schema_version": PPK_ACCEPTANCE_SCHEMA_VERSION,
+        "status": status,
+        "production_geodetic_validation": False,
+        "gates": gates,
+    }
+
+
 def execute(
     input_path: Path,
     output_dir: Path,
@@ -207,6 +239,8 @@ def execute(
     nav: Path | None = None,
     convbin: str = "convbin",
     rnx2rtkp: str = "rnx2rtkp",
+    rtklib_config: Path | None = None,
+    base_reference_type: str | None = None,
 ) -> dict:
     if base_input is None and (base_coords is not None or nav is not None):
         raise ConversionError(
@@ -214,29 +248,41 @@ def execute(
         )
     if base_input is not None and (base_coords is None or nav is None):
         raise ConversionError(
-            "PPK requires separate base CSV, surveyed base coordinates, "
+            "PPK requires separate base CSV, base reference coordinates, "
             "and RINEX NAV"
         )
+    if rtklib_config is not None and (not rtklib_config.is_file() or rtklib_config.stat().st_size == 0):
+        raise ConversionError(f"RTKLIB config file not found or empty: {rtklib_config}")
 
     rover_id, rover_bytes, rover_info = read_rawx(input_path)
     base_bytes = None
     base_id = None
     base_info = None
 
+    pairing_info = None
     if base_input is not None:
         base_id, base_bytes, base_info = read_rawx(base_input)
+
+        receiver_time_failures = [
+            label
+            for label, info in (("base", base_info), ("rover", rover_info))
+            if info["receiver_time_integrity"]["acceptance_blocking"]
+        ]
+        if receiver_time_failures:
+            raise ConversionError(
+                "Non-monotonic RXM-RAWX receiver time for "
+                + ", ".join(receiver_time_failures)
+            )
+        pairing_info = assess_receiver_overlap(base_info, rover_info)
 
         if input_path.resolve() == base_input.resolve() or base_id == rover_id:
             raise ConversionError(
                 "Base and rover must be distinct confirmed physical streams"
             )
 
-        if (
-            base_info["last_gps_seconds"] < rover_info["first_gps_seconds"]
-            or rover_info["last_gps_seconds"] < base_info["first_gps_seconds"]
-        ):
+        if pairing_info["status"] != "OVERLAP":
             raise ConversionError(
-                "Base and rover RAWX observation periods do not overlap"
+                "Base and rover RAWX receiver-time observation periods do not overlap"
             )
 
         if not nav.is_file() or nav.stat().st_size == 0:
@@ -251,7 +297,7 @@ def execute(
             and -180 <= lon <= 180
         ):
             raise ConversionError(
-                "Invalid surveyed base latitude/longitude/height"
+                "Invalid base reference latitude/longitude/height"
             )
 
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -261,15 +307,41 @@ def execute(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = {
+        "acceptance_schema_version": PPK_ACCEPTANCE_SCHEMA_VERSION,
+        "output_schema_version": PPK_OUTPUT_SCHEMA_VERSION,
+        "processing_engine": PPK_ENGINE_NAME,
         "mode": "RAWX_ONLY",
         "ppk_validated": False,
         "rover_id_as_provided": rover_id,
         "rover": rover_info,
         "base_id_as_provided": base_id,
         "base": base_info,
+        "time_integrity": {
+            "pairing_time_basis": "rxm_rawx_gps_seconds",
+            "rover_clock": rover_info["clock_integrity"],
+            "base_clock": base_info["clock_integrity"] if base_info is not None else None,
+            "pairing": pairing_info,
+        },
+        "base_reference": (
+            {
+                "type": base_reference_type or "UNSPECIFIED",
+                "latitude": base_coords[0],
+                "longitude": base_coords[1],
+                "ellipsoidal_height_m": base_coords[2],
+                "production_geodetic_validation": (
+                    base_reference_type == "SURVEYED_PRODUCTION"
+                ),
+            }
+            if base_coords is not None
+            else None
+        ),
         "warning": (
             "No geodetic accuracy or displacement validated. "
             "Device IDs are source labels only."
+        ),
+        "engine_acceptance": _engine_acceptance(
+            "PENDING_RUNTIME", rawx_input=True, convbin=False, navigation=False,
+            rnx2rtkp=False, parser=False, provenance=False,
         ),
     }
 
@@ -287,7 +359,12 @@ def execute(
         manifest["conversion"] = (
             "NOT_RUN_CONVBIN_MISSING; UBX exported and verified only"
         )
+        manifest["engine_acceptance"] = _engine_acceptance(
+            "BLOCKED_RUNTIME", rawx_input=True, convbin=False, navigation=False,
+            rnx2rtkp=False, parser=False, provenance=True,
+        )
     else:
+        manifest["convbin"] = _binary_identity(convbin_exe)
         rover_command, rover_obs = build_convbin_command(
             convbin_exe,
             rover_ubx,
@@ -295,8 +372,13 @@ def execute(
             "rover",
         )
         invoke(rover_command, rover_obs, "convbin rover")
+        manifest["rover_obs_sha256"] = _sha256_path(rover_obs)
         manifest["conversion"] = (
             "RINEX_OBS_GENERATED_NOT_GEODETICALLY_VALIDATED"
+        )
+        manifest["engine_acceptance"] = _engine_acceptance(
+            "PARTIAL_CONVBIN_ONLY", rawx_input=True, convbin=True, navigation=False,
+            rnx2rtkp=False, parser=False, provenance=True,
         )
 
         if base_bytes is not None:
@@ -307,11 +389,17 @@ def execute(
                 "base",
             )
             invoke(base_command, base_obs, "convbin base")
+            manifest["base_obs_sha256"] = _sha256_path(base_obs)
 
             solver = _binary(rnx2rtkp)
             if solver is None:
                 manifest["ppk"] = "NOT_RUN_RNX2RTKP_MISSING"
+                manifest["engine_acceptance"] = _engine_acceptance(
+                    "BLOCKED_RUNTIME", rawx_input=True, convbin=True, navigation=True,
+                    rnx2rtkp=False, parser=False, provenance=True,
+                )
             else:
+                manifest["rnx2rtkp"] = _binary_identity(solver)
                 lat, lon, alt = base_coords
                 nav_plain = output_dir / "navigation.rnx"
 
@@ -325,26 +413,25 @@ def execute(
                     ) from exc
 
                 nav_plain.write_bytes(nav_content)
+                manifest["navigation_transport_sha256"] = _sha256_path(nav)
+                manifest["navigation_normalized_sha256"] = _sha256_path(nav_plain)
                 pos = output_dir / "solution.pos"
 
-                invoke(
-                    [
-                        solver,
-                        "-p",
-                        "2",
-                        "-l",
-                        str(lat),
-                        str(lon),
-                        str(alt),
-                        "-o",
-                        str(pos),
-                        str(rover_obs),
-                        str(base_obs),
-                        str(nav_plain),
-                    ],
-                    pos,
-                    "rnx2rtkp",
-                )
+                solver_command = [solver]
+                if rtklib_config is not None:
+                    solver_command.extend(["-k", str(rtklib_config)])
+                    manifest["rtklib_config_mode"] = "explicit_file"
+                    manifest["rtklib_config_sha256"] = _sha256_path(rtklib_config)
+                else:
+                    solver_command.extend(["-p", "2"])
+                    manifest["rtklib_config_mode"] = "rtklib_default_kinematic"
+                    manifest["rtklib_config_sha256"] = None
+                solver_command.extend([
+                    "-l", str(lat), str(lon), str(alt),
+                    "-o", str(pos), str(rover_obs), str(base_obs), str(nav_plain),
+                ])
+
+                invoke(solver_command, pos, "rnx2rtkp")
 
                 try:
                     solutions = parse_pos_file(pos)
@@ -356,6 +443,10 @@ def execute(
                     for solution in solutions
                 )
                 manifest["mode"] = "PPK_OUTPUT_UNVALIDATED"
+                manifest["engine_acceptance"] = _engine_acceptance(
+                    "PASS", rawx_input=True, convbin=True, navigation=True,
+                    rnx2rtkp=True, parser=True, provenance=True,
+                )
                 manifest["ppk"] = {
                     "solution_epochs": len(solutions),
                     "first_solution_utc": (
@@ -372,9 +463,8 @@ def execute(
                         solution.h_acc_m
                         for solution in solutions
                     ),
-                    "nav_sha256": hashlib.sha256(
-                        nav.read_bytes()
-                    ).hexdigest(),
+                    "nav_sha256": _sha256_path(nav),
+                    "solution_pos_sha256": _sha256_path(pos),
                     "note": (
                         "RTKLIB output parsed; independent field accuracy "
                         "validation still required"
@@ -423,6 +513,25 @@ def main() -> None:
         "--rnx2rtkp",
         default=os.getenv("RTKLIB_RNX2RTKP_PATH", "rnx2rtkp"),
     )
+    parser.add_argument(
+        "--rtklib-config",
+        type=Path,
+        default=Path(os.getenv(
+            "RTKLIB_CONFIG_FILE",
+            str(Path(__file__).resolve().parents[1] / "config" / "rtklib_ppk.conf"),
+        )),
+        help="RTKLIB processing config used for engine acceptance",
+    )
+    parser.add_argument(
+        "--base-reference-type",
+        choices=("ENGINE_TEST_SPP_APPROXIMATE", "SURVEYED_PRODUCTION"),
+        help="provenance classification for supplied base coordinates",
+    )
+    parser.add_argument(
+        "--require-engine-pass",
+        action="store_true",
+        help="exit nonzero unless the full convbin+NAV+rnx2rtkp+parser chain passes",
+    )
     args = parser.parse_args()
 
     coords = (
@@ -434,7 +543,7 @@ def main() -> None:
         any(value is not None for value in coords)
         and not all(value is not None for value in coords)
     ):
-        parser.error("Specify all three surveyed base coordinates")
+        parser.error("Specify all three base reference coordinates")
 
     try:
         result = execute(
@@ -445,10 +554,15 @@ def main() -> None:
             args.nav,
             args.convbin,
             args.rnx2rtkp,
+            args.rtklib_config,
+            args.base_reference_type,
         )
     except ConversionError as exc:
         parser.exit(2, f"BLOCKED: {exc}\n")
 
+    if args.require_engine_pass and result["engine_acceptance"]["status"] != "PASS":
+        print(json.dumps(result, indent=2))
+        parser.exit(3, "ENGINE ACCEPTANCE NOT PASSED\n")
     print(json.dumps(result, indent=2))
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 import hashlib
 import json
+import math
+import shutil
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
@@ -11,6 +13,8 @@ from services.rinex_service.normalizer import RINEXNormalizationError, normalize
 
 
 PPK_OUTPUT_SCHEMA_VERSION = "ppk.solution.v1"
+PPK_ACCEPTANCE_SCHEMA_VERSION = "ppk.engine.acceptance.v1"
+PPK_ENGINE_NAME = "RTKLIB"
 
 
 class PPKSolveError(RuntimeError):
@@ -61,6 +65,7 @@ class PPKSolutionEpoch:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "ellipsoidal_height_m": self.ellipsoidal_height_m,
+            "vertical_datum": "ELLIPSOIDAL_WGS84",
             "rtklib_quality": self.rtklib_quality,
             "rtklib_ns": self.satellites,
             "rtklib_sdn_m": self.sdn_m,
@@ -84,6 +89,15 @@ class PPKWindowResult:
     navigation_provider: str | None
     navigation_cache_hit: bool
     rtklib_config_sha256: str | None
+    base_rawx_sha256: str | None = None
+    rover_rawx_sha256: str | None = None
+    base_obs_sha256: str | None = None
+    rover_obs_sha256: str | None = None
+    normalized_navigation_sha256: str | None = None
+    convbin_sha256: str | None = None
+    rnx2rtkp_sha256: str | None = None
+    solution_pos_sha256: str | None = None
+    engine_name: str = PPK_ENGINE_NAME
 
 
 class PPKEngine(ABC):
@@ -129,6 +143,12 @@ class RTKLibPPKEngine(PPKEngine):
     ) -> PPKWindowResult:
         if observed_at.tzinfo is None:
             raise PPKSolveError("observed_at must be timezone-aware UTC-compatible datetime")
+        if not base_rawx or not rover_rawx:
+            raise PPKSolveError("base and rover RAWX streams must both be nonempty")
+        if base_rawx == rover_rawx:
+            raise PPKSolveError("base and rover RAWX streams must be distinct physical observations")
+        base_rawx_sha256 = hashlib.sha256(base_rawx).hexdigest()
+        rover_rawx_sha256 = hashlib.sha256(rover_rawx).hexdigest()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             base_ubx = tmp_path / "base.ubx"
@@ -137,10 +157,13 @@ class RTKLibPPKEngine(PPKEngine):
             rover_ubx.write_bytes(rover_rawx)
             base_obs = self._convert_to_rinex(base_ubx, tmp_path, "base")
             rover_obs = self._convert_to_rinex(rover_ubx, tmp_path, "rover")
+            base_obs_sha256 = hashlib.sha256(base_obs.read_bytes()).hexdigest()
+            rover_obs_sha256 = hashlib.sha256(rover_obs.read_bytes()).hexdigest()
             nav_path, nav_meta = self._prepare_navigation(observed_at, tmp_path, station=station)
             pos_file = tmp_path / "solution.pos"
             self._run_rnx2rtkp(rover_obs, base_obs, nav_path, pos_file)
             solutions = parse_pos_file(pos_file)
+            solution_pos_sha256 = hashlib.sha256(pos_file.read_bytes()).hexdigest()
             config_sha = None
             if self._rtklib_config_file:
                 config_path = Path(self._rtklib_config_file)
@@ -153,6 +176,14 @@ class RTKLibPPKEngine(PPKEngine):
                 navigation_provider=nav_meta.get("provider"),
                 navigation_cache_hit=bool(nav_meta.get("cache_hit")),
                 rtklib_config_sha256=config_sha,
+                base_rawx_sha256=base_rawx_sha256,
+                rover_rawx_sha256=rover_rawx_sha256,
+                base_obs_sha256=base_obs_sha256,
+                rover_obs_sha256=rover_obs_sha256,
+                normalized_navigation_sha256=nav_meta.get("normalized_sha256"),
+                convbin_sha256=_executable_sha256(self._convbin),
+                rnx2rtkp_sha256=_executable_sha256(self._rnx2rtkp),
+                solution_pos_sha256=solution_pos_sha256,
             )
 
     def solve(self, base_rawx: bytes, rover_rawx: bytes) -> PPKSolutionEpoch:
@@ -215,6 +246,7 @@ class RTKLibPPKEngine(PPKEngine):
             "source_url": source_url,
             "provider": provider,
             "cache_hit": cache_hit,
+            "normalized_sha256": hashlib.sha256(normalized.content).hexdigest(),
         }
 
     def _run_rnx2rtkp(self, rover_obs: Path, base_obs: Path, nav_file: Path, pos_out: Path) -> None:
@@ -249,6 +281,20 @@ class RTKLibPPKEngine(PPKEngine):
             raise PPKSolveError(f"{step}: timed out after {timeout}s") from exc
 
 
+def _executable_sha256(command: str) -> str | None:
+    """Return a reproducible hash for a resolved executable when available."""
+    resolved = Path(command)
+    if not resolved.is_file():
+        found = shutil.which(command)
+        if not found:
+            return None
+        resolved = Path(found)
+    try:
+        return hashlib.sha256(resolved.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def parse_pos_file(path: Path) -> list[PPKSolutionEpoch]:
     solutions: list[PPKSolutionEpoch] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
@@ -261,6 +307,11 @@ def parse_pos_file(path: Path) -> list[PPKSolutionEpoch]:
             raise PPKSolveError(f"invalid RTKLIB solution line {line_number}: {exc}") from exc
     if not solutions:
         raise PPKSolveError("rnx2rtkp produced no solution epochs")
+    timestamps = [solution.timestamp_utc for solution in solutions]
+    if len(set(timestamps)) != len(timestamps):
+        raise PPKSolveError("rnx2rtkp produced duplicate solution timestamps")
+    if timestamps != sorted(timestamps):
+        raise PPKSolveError("rnx2rtkp solution timestamps are not monotonic")
     return solutions
 
 
@@ -284,8 +335,28 @@ def parse_pos_line(line: str) -> PPKSolutionEpoch:
         ratio = float(fields[14]) if len(fields) > 14 else None
     except (ValueError, IndexError) as exc:
         raise PPKSolveError(f"could not parse .pos line {line!r}: {exc}") from exc
+    numeric_values = [lat, lon, height, sdn, sde, sdu]
+    if age is not None:
+        numeric_values.append(age)
+    if ratio is not None:
+        numeric_values.append(ratio)
+    if not all(math.isfinite(value) for value in numeric_values):
+        raise PPKSolveError(f"non-finite numeric value in RTKLIB solution (line: {line!r})")
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+        raise PPKSolveError(f"invalid RTKLIB latitude/longitude (line: {line!r})")
     if q < 1 or q > 6:
         raise PPKSolveError(f"invalid RTKLIB solution quality Q={q} (line: {line!r})")
+    if ns <= 0:
+        raise PPKSolveError(f"invalid RTKLIB satellite count ns={ns} (line: {line!r})")
+    if min(sdn, sde, sdu) < 0:
+        raise PPKSolveError(f"negative RTKLIB standard deviation (line: {line!r})")
+    # RTKLIB's solution age is the signed rover/base observation-time
+    # difference ("age of differential"), not an elapsed-duration field.
+    # A negative value is valid when the selected base observation is later
+    # than the rover epoch. Preserve the sign for provenance/diagnostics;
+    # RTKLIB's processing max-age gate is responsible for admissibility.
+    if ratio is not None and ratio < 0:
+        raise PPKSolveError(f"negative RTKLIB ambiguity ratio (line: {line!r})")
     return PPKSolutionEpoch(
         timestamp_utc=timestamp,
         latitude=lat,
