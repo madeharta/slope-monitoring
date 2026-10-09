@@ -248,3 +248,198 @@
     grid-column:span 1;
   }
 }
+
+
+/* sensor layout integrity closure */
+.sensor-page{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  padding-top:92px;
+  scroll-padding-top:92px;
+  overflow-x:hidden;
+}
+
+/*
+ * pgdoc2-page is a flex-column container. Horizontal auto margins on
+ * its children must not be allowed to turn chart containers into
+ * shrink-to-fit flex items.
+ */
+.sensor-mode,
+.sensor-controls,
+.sensor-stat-grid,
+.sensor-grid,
+.sensor-event-panel,
+.sensor-guard,
+.sensor-error,
+.sensor-context{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+
+.sensor-grid{
+  align-items:stretch;
+}
+
+.sensor-grid > *,
+.sensor-card,
+.sensor-wave-card{
+  min-width:0;
+  width:100%;
+  box-sizing:border-box;
+}
+
+.sensor-card{
+  overflow:visible;
+}
+
+.sensor-gnss-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+
+.sensor-gnss-grid .sensor-card{
+  min-height:390px;
+}
+
+.sensor-chart-head{
+  min-height:44px;
+}
+
+.sensor-chart-head h2{
+  font-size:15px;
+  line-height:1.3;
+}
+
+.sensor-chart-head span{
+  font-size:11.5px;
+  line-height:1.45;
+}
+
+.sensor-chart-legend{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 16px;
+  min-height:26px;
+  margin:0 0 6px;
+  color:var(--ink-2);
+  font-size:11.5px;
+}
+
+.sensor-chart-legend span{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+
+.sensor-chart-legend i{
+  display:inline-block;
+  width:20px;
+  height:3px;
+  border-radius:99px;
+  flex:0 0 auto;
+}
+
+.sensor-chart-legend i.is-dashed,
+.sensor-chart-legend i.is-dotted{
+  height:0;
+  background:none !important;
+  border-top-width:2px;
+}
+
+.sensor-chart-legend i.is-dashed{
+  border-top-style:dashed;
+}
+
+.sensor-chart-legend i.is-dotted{
+  border-top-style:dotted;
+}
+
+.sensor-chart-legend em{
+  margin-left:auto;
+  color:var(--ink-3);
+  font:500 11px/1 var(--mono);
+  font-style:normal;
+}
+
+.sensor-context-grid span,
+.sensor-event-meta-grid span,
+.sensor-metric-grid span{
+  font-size:10.5px;
+  line-height:1.35;
+}
+
+.sensor-context-grid strong,
+.sensor-event-meta-grid strong,
+.sensor-metric-grid strong{
+  font-size:11.5px;
+  line-height:1.45;
+}
+
+.sensor-event-panel h3{
+  margin:0;
+  font-size:13px;
+  color:var(--ink-2);
+}
+
+.sensor-wave-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:start;
+  gap:16px;
+}
+
+.sensor-wave-card{
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--panel-2);
+}
+
+.sensor-wave-card h3{
+  margin-bottom:7px;
+}
+
+.sensor-transport-note{
+  font-size:11.5px;
+  line-height:1.45;
+}
+
+/* Stack before either chart becomes visually cramped. */
+@media(max-width:1100px){
+  .sensor-gnss-grid,
+  .sensor-wave-grid{
+    grid-template-columns:1fr;
+  }
+
+  .sensor-gnss-grid .sensor-card{
+    min-height:370px;
+  }
+}
+
+@media(max-width:720px){
+  .sensor-page{
+    padding-top:78px;
+    scroll-padding-top:78px;
+    padding-inline:12px;
+  }
+
+  .sensor-chart-head{
+    min-height:0;
+  }
+
+  .sensor-chart-legend{
+    font-size:11px;
+  }
+}
+
+@media(max-width:430px){
+  .sensor-page{
+    padding-inline:10px;
+  }
+
+  .sensor-chart-legend em{
+    width:100%;
+    margin-left:0;
+  }
+}

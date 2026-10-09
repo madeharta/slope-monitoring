@@ -233,3 +233,26 @@
   .blast-section-head{display:grid}
   .blast-role-badge{justify-self:start}
 }
+
+
+/* blast disclosure accessibility closure */
+.blast-flow{
+  overflow:visible;
+  max-height:none;
+}
+
+.blast-flow-body{
+  overflow:visible;
+  max-height:none;
+}
+
+.blast-flow pre{
+  max-height:none;
+  overflow-x:auto;
+  overflow-y:visible;
+  white-space:pre;
+}
+
+.blast-flow[open]{
+  overflow:visible;
+}

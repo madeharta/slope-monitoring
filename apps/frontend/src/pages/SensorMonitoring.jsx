@@ -279,12 +279,18 @@ export default function SensorMonitoring() {
               </span>
             </div>
           </div>
-          {gnss.length ? <PanelChart height={280}
+          {gnss.length ? <>
+            <div className="sensor-chart-legend" aria-label="GNSS coordinate legend">
+              <span><i style={{ background: pal.lineDefault }} />Latitude</span>
+              <span><i className="is-dashed" style={{ borderColor: pal.line.displacement || pal.lineDefault }} />Longitude</span>
+            </div>
+            <PanelChart height={300} axisFontSize={11}
             left={{ name: "latitude" }} right={{ name: "longitude" }}
             series={[
               { name: "Latitude", data: pts(gnss, "latitude"), color: pal.lineDefault, width: 1.8 },
               { name: "Longitude", data: pts(gnss, "longitude"), color: pal.line.displacement || pal.lineDefault, width: 1.8, axis: 1, dash: "dashed" },
-            ]} /> : <div className="sensor-empty">
+            ]} />
+          </> : <div className="sensor-empty">
               <strong>No GNSS rows</strong>
               <span>
                 Pilih site/device lalu Refresh actual data.
@@ -305,12 +311,18 @@ export default function SensorMonitoring() {
               </span>
             </div>
           </div>
-          {gnss.length ? <PanelChart height={280}
+          {gnss.length ? <>
+            <div className="sensor-chart-legend" aria-label="GNSS altitude accuracy legend">
+              <span><i style={{ background: pal.line.disp_u || pal.lineDefault }} />Altitude · m</span>
+              <span><i className="is-dashed" style={{ borderColor: pal.lineDefault }} />h_acc · m</span>
+            </div>
+            <PanelChart height={300} axisFontSize={11}
             left={{ name: "m altitude" }} right={{ name: "m h_acc", min: 0 }}
             series={[
               { name: "Altitude", data: pts(gnss, "altitude_m"), color: pal.line.disp_u || pal.lineDefault, width: 1.8 },
               { name: "h_acc", data: pts(gnss, "h_acc_m"), color: pal.lineDefault, width: 1.6, axis: 1, dash: "dashed" },
-            ]} /> : <div className="sensor-empty">
+            ]} />
+          </> : <div className="sensor-empty">
               <strong>No GNSS rows</strong>
               <span>
                 Pilih site/device lalu Refresh actual data.
@@ -378,8 +390,16 @@ export default function SensorMonitoring() {
             </small>
           </div>
         )}
-        <div className="sensor-grid">
-          <div><h3>ADXL355 acceleration XYZ</h3>{wave.length ? <PanelChart height={300} left={{ name: "m/s²" }} series={[
+        <div className="sensor-grid sensor-wave-grid">
+          <div className="sensor-wave-card">
+            <h3>ADXL355 acceleration XYZ</h3>
+            <div className="sensor-chart-legend">
+              <span><i style={{ background: pal.line.ppa || pal.lineDefault }} />X</span>
+              <span><i className="is-dashed" style={{ borderColor: pal.line.tilt_x || pal.lineDefault }} />Y</span>
+              <span><i className="is-dotted" style={{ borderColor: pal.line.displacement || pal.lineDefault }} />Z</span>
+              <em>m/s²</em>
+            </div>
+            {wave.length ? <PanelChart height={320} axisFontSize={11} left={{ name: "m/s²" }} series={[
             { name: "ADXL355 X", data: pts(wave, "adxl355_x_mps2"), color: pal.line.ppa || pal.lineDefault, width: 1.5 },
             { name: "ADXL355 Y", data: pts(wave, "adxl355_y_mps2"), color: pal.line.tilt_x || pal.lineDefault, width: 1.3, dash: "dashed" },
             { name: "ADXL355 Z", data: pts(wave, "adxl355_z_mps2"), color: pal.line.displacement || pal.lineDefault, width: 1.3, dash: "dotted" },
@@ -388,8 +408,18 @@ export default function SensorMonitoring() {
               <span>
                 Pilih source file/event untuk memuat persisted acceleration samples.
               </span>
-            </div>}</div>
-          <div><h3>MPU9250 acceleration XYZ</h3>{wave.length ? <PanelChart height={300} left={{ name: "m/s²" }} series={[
+            </div>}
+          </div>
+
+          <div className="sensor-wave-card">
+            <h3>MPU9250 acceleration XYZ</h3>
+            <div className="sensor-chart-legend">
+              <span><i style={{ background: pal.line.ppa_mpu9250 || pal.lineDefault }} />X</span>
+              <span><i className="is-dashed" style={{ borderColor: pal.line.tilt_y || pal.lineDefault }} />Y</span>
+              <span><i className="is-dotted" style={{ borderColor: pal.line.disp_u || pal.lineDefault }} />Z</span>
+              <em>m/s²</em>
+            </div>
+            {wave.length ? <PanelChart height={320} axisFontSize={11} left={{ name: "m/s²" }} series={[
             { name: "MPU9250 X", data: pts(wave, "mpu9250_x_mps2"), color: pal.line.ppa_mpu9250 || pal.lineDefault, width: 1.5 },
             { name: "MPU9250 Y", data: pts(wave, "mpu9250_y_mps2"), color: pal.line.tilt_y || pal.lineDefault, width: 1.3, dash: "dashed" },
             { name: "MPU9250 Z", data: pts(wave, "mpu9250_z_mps2"), color: pal.line.disp_u || pal.lineDefault, width: 1.3, dash: "dotted" },
@@ -398,7 +428,8 @@ export default function SensorMonitoring() {
               <span>
                 Pilih source file/event untuk memuat persisted acceleration samples.
               </span>
-            </div>}</div>
+            </div>}
+          </div>
         </div>
       </section>
 

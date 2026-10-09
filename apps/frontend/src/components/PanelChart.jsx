@@ -19,6 +19,7 @@ const TXT = "#8a8b95", GRID = "#1c1c22", RULE = "#26262d", AXLBL = "#7c7d87";
 export default function PanelChart({
   height = 260, series = [], left = null, right = null,
   bands = [], hlines = [], vlines = [],
+  axisFontSize = 9.5,
 }) {
   const ref = useRef(null);
   const chartRef = useRef(null);
@@ -40,9 +41,9 @@ export default function PanelChart({
 
     const axisBase = (a) => ({
       type: "value", name: a?.name, min: a?.min, max: a?.max,
-      nameTextStyle: { color: TXT, fontSize: 9.5, align: "left" }, nameGap: 8,
+      nameTextStyle: { color: TXT, fontSize: axisFontSize, align: "left" }, nameGap: 8,
       axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
-      axisLabel: { color: AXLBL, fontSize: 9.5, fontFamily: "ui-monospace,monospace" },
+      axisLabel: { color: AXLBL, fontSize: axisFontSize, fontFamily: "ui-monospace,monospace" },
     });
     const yAxis = [left ? { ...axisBase(left), position: "left" } : { show: false }];
     yAxis.push(right ? { ...axisBase(right), position: "right" } : { show: false, position: "right" });
@@ -104,7 +105,7 @@ export default function PanelChart({
       grid: { left: 54, right: right ? 52 : 20, top: 16, bottom: 24 },
       xAxis: {
         type: "time", axisLine: { lineStyle: { color: RULE } },
-        axisLabel: { color: TXT, fontSize: 9.5, hideOverlap: true, fontFamily: "ui-monospace,monospace" },
+        axisLabel: { color: TXT, fontSize: axisFontSize, hideOverlap: true, fontFamily: "ui-monospace,monospace" },
         splitLine: { show: true, lineStyle: { color: GRID } }, axisTick: { show: false },
       },
       yAxis,
@@ -114,7 +115,7 @@ export default function PanelChart({
         textStyle: { color: "#e9e9ee", fontSize: 12 }, axisPointer: { type: "cross", lineStyle: { color: RULE }, crossStyle: { color: RULE } },
       },
     }, true);
-  }, [series, left, right, bands, hlines, vlines, variant]);
+  }, [series, left, right, bands, hlines, vlines, variant, axisFontSize]);
 
   return <div ref={ref} style={{ width: "100%", height }} />;
 }
