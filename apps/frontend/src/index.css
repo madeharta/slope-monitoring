@@ -840,3 +840,40 @@ html[data-variant="editorial"] .ov-title .ov-count{ font-family:'Playfair Displa
   border-color:var(--ink3);
   background:var(--panel);
 }
+
+/* Overview right rail: scalable card stack */
+.ov-right{
+  max-height:calc(100vh - 118px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:4px;
+  scrollbar-gutter:stable;
+  overscroll-behavior:contain;
+}
+
+.ov-right > *{
+  flex:0 0 auto;
+  min-width:0;
+}
+
+.ov-right::-webkit-scrollbar{
+  width:6px;
+}
+
+.ov-right::-webkit-scrollbar-thumb{
+  background:var(--line);
+  border-radius:999px;
+}
+
+@media (max-width:900px){
+  .ov-right{
+    position:relative;
+    right:auto;
+    bottom:auto;
+    width:auto;
+    max-height:none;
+    overflow:visible;
+    padding:16px;
+    margin:0;
+  }
+}

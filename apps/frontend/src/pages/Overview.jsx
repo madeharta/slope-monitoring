@@ -225,6 +225,13 @@ export default function Overview() {
           <div className="wcard-h"><h3>Vibration (PPV) live</h3><span className="wgic">⋯</span></div>
           <div className="wcard-b"><Spark data={vibArr} c={pal.spark} area={pal.area} /></div>
         </div>
+        <div className="wcard ppk-overview-card">
+          <div className="wcard-h"><h3>PPK technical results</h3><span className="wgic">ⓘ</span></div>
+          <div className="wcard-b">
+            <div className="ppk-overview-copy">PPK output is UNVALIDATED for production displacement. View the locked solution contract, RTKLIB quality, and reproducibility provenance without changing operational alarm state.</div>
+            <button className="ppk-overview-link" onClick={() => nav("/ppk")}>Open PPK QA →</button>
+          </div>
+        </div>
         <div className="wcard">
           <div className="wcard-h"><h3>Technical Status Summary</h3></div>
           <div className="wcard-b">

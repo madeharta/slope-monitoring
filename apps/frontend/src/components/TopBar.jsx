@@ -19,6 +19,11 @@ const I = {
       <path d="M4 19V5" /><path d="M4 15l4.5-4.5 3.5 3 7-7.5" />
     </svg>
   ),
+  satellite: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 19 19 5" /><path d="m14 5 5 5" /><path d="m5 14 5 5" /><path d="M8.5 8.5a4 4 0 0 0 7 7" /><path d="M3 21h6" />
+    </svg>
+  ),
   bell: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 8a6 6 0 0 1 12 0c0 6 2.5 7 2.5 7H3.5S6 14 6 8z" /><path d="M10.5 20a1.6 1.6 0 0 0 3 0" />
@@ -48,6 +53,7 @@ export default function TopBar() {
   const items = [
     { key: "map", label: "Overview", icon: I.dash, onClick: () => { nav("/"); setNav("map"); } },
     { key: "analytics", label: "Analytics", icon: I.chart, onClick: () => setNav("analytics") },
+    { key: "ppk", label: "PPK", icon: I.satellite, onClick: () => { nav("/ppk"); setNav("ppk"); } },
     { key: "alarms", label: "Alarms", icon: I.bell, onClick: () => setNav("alarms") },
   ];
   return (
@@ -58,8 +64,8 @@ export default function TopBar() {
       </div>
       <nav className="topnav" aria-label="Primary">
         {items.map((it) => (
-          <button key={it.key} className={"nav-item" + (navKey === it.key ? " on" : "")}
-            aria-current={navKey === it.key ? "page" : "false"} onClick={it.onClick}>
+          <button key={it.key} className={"nav-item" + ((navKey === it.key || (it.key === "ppk" && location.pathname.startsWith("/ppk"))) ? " on" : "")}
+            aria-current={(navKey === it.key || (it.key === "ppk" && location.pathname.startsWith("/ppk"))) ? "page" : "false"} onClick={it.onClick}>
             {it.icon}<span>{it.label}</span>
           </button>
         ))}
@@ -113,6 +119,9 @@ export default function TopBar() {
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/uploads"); }}>
                 Uploads
+              </button>
+              <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/ppk"); setNav("ppk"); }}>
+                PPK Technical Results
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/settings"); }}>
                 Settings
