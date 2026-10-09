@@ -216,6 +216,16 @@ export default function BlastControl() {
       </div>
 
       <section className="panel blast-card">
+        <div className="blast-section-head">
+          <div>
+            <h2>Blast command</h2>
+            <span>Site-level request state for the authoritative BASE.</span>
+          </div>
+          <span className="blast-role-badge">
+            {canOperate ? "OPERATOR CONTROL" : "VIEW ONLY"}
+          </span>
+        </div>
+
         <div className="blast-fields">
           <label>
             <span>Site</span>
@@ -341,10 +351,17 @@ export default function BlastControl() {
         )}
       </section>
 
-      <section className="panel blast-flow">
-        <h2>LoRa v1.6 command flow</h2>
+      <details className="panel blast-flow">
+        <summary className="blast-flow-summary">
+          <span>
+            <strong>LoRa v1.6 command flow</strong>
+            <small>Reference flow · expand when needed</small>
+          </span>
+          <span aria-hidden>⌄</span>
+        </summary>
 
-        <pre>{`WEB
+        <div className="blast-flow-body">
+          <pre>{`WEB
 ↓
 operator set TimeOutTrigger
 ↓
@@ -366,7 +383,8 @@ blast terdeteksi → record → simpan file SD
 atau
 timeout → kembali normal tanpa record
 ========== END RANAH ITB ==========`}</pre>
-      </section>
+        </div>
+      </details>
     </div>
   );
 }

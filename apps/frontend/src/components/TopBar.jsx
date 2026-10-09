@@ -124,6 +124,9 @@ export default function TopBar() {
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/ppk"); setNav("ppk"); }}>
                 PPK Technical Results
               </button>
+              <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/blast"); setNav("blast"); }}>
+                Blast Control
+              </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/settings"); }}>
                 Settings
               </button>

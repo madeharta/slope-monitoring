@@ -115,9 +115,23 @@ export default function SensorMonitoring() {
     if (next === "synthetic") {
       const w = syntheticWaveform();
       setSiteId(DEMO_SITE); setDeviceId(DEMO_DEVICE); setGnss(syntheticGnss());
-      setEvents([{ event_id: "demo-v1", source_file: "synthetic://accel/blast-demo-v1",
-        observed_sample_rate_hz: 100, sample_count: 240, duration_ms: 2390,
-        quality_gate_status: "synthetic_demo", validation_status: "not_applicable" }]);
+      setEvents([{
+        event_id: "demo-v1",
+        device_id: DEMO_DEVICE,
+        source_file: "synthetic://accel/blast-demo-v1",
+        observed_sample_rate_hz: 100,
+        sample_count: 240,
+        duration_ms: 2390,
+        median_gap_ms: 10,
+        max_gap_ms: 10,
+        quality_gate_status: "synthetic_demo",
+        validation_status: "not_applicable",
+        source_received_at: null,
+        adxl355_ppa_g: null,
+        adxl355_ppv_mm_s: null,
+        mpu9250_ppa_g: null,
+        mpu9250_ppv_mm_s: null,
+      }]);
       setEventFile("synthetic://accel/blast-demo-v1"); setWave(w);
       setWaveMeta({ total_samples: w.length, returned_samples: w.length,
         downsampling: { method: "none", stride: 1 } });
@@ -128,7 +142,28 @@ export default function SensorMonitoring() {
   }
 
   const latest = gnss.at(-1);
+  const first = gnss[0];
   const event = events.find((e) => e.source_file === eventFile) || events[0];
+
+  const sourceLabel = mode === "synthetic" ? "synthetic demo" : "actual";
+  const validationLabel =
+    latest?.validation_status ||
+    (mode === "synthetic" ? "not_applicable" : "unvalidated");
+
+  const latestTime = latest?.timestamp_utc
+    ? new Date(latest.timestamp_utc).toLocaleString()
+    : "—";
+
+  const timeRange =
+    first && latest
+      ? `${new Date(first.timestamp_utc).toLocaleString()} → ${new Date(latest.timestamp_utc).toLocaleString()}`
+      : "—";
+
+  const eventReceived = event?.source_received_at
+    ? new Date(event.source_received_at).toLocaleString()
+    : mode === "synthetic"
+      ? "browser-generated"
+      : "—";
 
   return (
     <div className="l2 pgdoc2-page sensor-page">
@@ -139,9 +174,34 @@ export default function SensorMonitoring() {
       </div>
 
       <div className="sensor-mode">
-        <button className={mode === "actual" ? "admin-btn admin-btn-primary" : "admin-btn"} onClick={() => setSource("actual")}>Actual</button>
-        <button className={mode === "synthetic" ? "admin-btn admin-btn-primary" : "admin-btn"} onClick={() => setSource("synthetic")}>Synthetic Demo</button>
-        {mode === "synthetic" && <strong className="sensor-demo-watermark">SYNTHETIC DEMO DATA — NOT FIELD MEASUREMENT</strong>}
+        <div className="sensor-mode-copy">
+          <strong>Data source</strong>
+          <span>
+            Actual = persisted telemetry · Synthetic Demo = browser-only visualization.
+          </span>
+        </div>
+
+        <div className="sensor-mode-actions">
+          <button
+            className={mode === "actual" ? "admin-btn admin-btn-primary" : "admin-btn"}
+            onClick={() => setSource("actual")}
+          >
+            Actual
+          </button>
+
+          <button
+            className={mode === "synthetic" ? "admin-btn admin-btn-primary" : "admin-btn"}
+            onClick={() => setSource("synthetic")}
+          >
+            Synthetic Demo
+          </button>
+        </div>
+
+        {mode === "synthetic" && (
+          <strong className="sensor-demo-watermark">
+            SYNTHETIC DEMO DATA — NOT FIELD MEASUREMENT
+          </strong>
+        )}
       </div>
 
       <section className="panel sensor-controls">
@@ -166,43 +226,179 @@ export default function SensorMonitoring() {
         <div><span>Source file</span><strong>{latest?.source_file || "unavailable"}</strong></div>
       </div>
 
-      <div className="sensor-grid">
+      <section className="panel sensor-context">
+        <div className="sensor-section-head">
+          <div>
+            <h2>GNSS telemetry context</h2>
+            <span>
+              Query scope, provenance, validation and latest persisted position.
+            </span>
+          </div>
+
+          <span
+            className={`sensor-source-badge ${
+              mode === "synthetic" ? "is-demo" : ""
+            }`}
+          >
+            {sourceLabel}
+          </span>
+        </div>
+
+        <div className="sensor-context-grid">
+          <div><span>Site</span><strong>{siteId || "—"}</strong></div>
+          <div><span>Device</span><strong>{deviceId || "—"}</strong></div>
+          <div><span>Validation</span><strong>{validationLabel}</strong></div>
+          <div><span>Interpolation</span><strong>none</strong></div>
+          <div><span>Rows</span><strong>{gnss.length}</strong></div>
+          <div><span>Latest timestamp</span><strong>{latestTime}</strong></div>
+
+          <div className="sensor-context-wide">
+            <span>Time range</span>
+            <strong>{timeRange}</strong>
+          </div>
+
+          <div className="sensor-context-wide">
+            <span>Latest provenance</span>
+            <strong>
+              {latest?.source_file ||
+                "unavailable / historical provenance not persisted"}
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <div className="sensor-grid sensor-gnss-grid">
         <section className="panel sensor-card">
-          <h2>GNSS latitude / longitude</h2>
-          {gnss.length ? <PanelChart height={250}
+          <div className="sensor-chart-head">
+            <div>
+              <h2>GNSS latitude / longitude</h2>
+              <span>
+                Latest: {latest
+                  ? `${fmt(latest.latitude, 7)}, ${fmt(latest.longitude, 7)}`
+                  : "—"}
+              </span>
+            </div>
+          </div>
+          {gnss.length ? <PanelChart height={280}
             left={{ name: "latitude" }} right={{ name: "longitude" }}
             series={[
               { name: "Latitude", data: pts(gnss, "latitude"), color: pal.lineDefault, width: 1.8 },
               { name: "Longitude", data: pts(gnss, "longitude"), color: pal.line.displacement || pal.lineDefault, width: 1.8, axis: 1, dash: "dashed" },
-            ]} /> : <div className="ppk-empty">Belum ada GNSS rows.</div>}
+            ]} /> : <div className="sensor-empty">
+              <strong>No GNSS rows</strong>
+              <span>
+                Pilih site/device lalu Refresh actual data.
+                Missing/gap tidak diinterpolasi.
+              </span>
+            </div>}
         </section>
         <section className="panel sensor-card">
-          <h2>GNSS altitude / h_acc</h2>
-          {gnss.length ? <PanelChart height={250}
+          <div className="sensor-chart-head">
+            <div>
+              <h2>GNSS altitude / h_acc</h2>
+              <span>
+                Latest: altitude {latest?.altitude_m == null
+                  ? "—"
+                  : `${fmt(latest.altitude_m, 3)} m`} · h_acc {latest?.h_acc_m == null
+                  ? "—"
+                  : `${fmt(latest.h_acc_m, 3)} m`}
+              </span>
+            </div>
+          </div>
+          {gnss.length ? <PanelChart height={280}
             left={{ name: "m altitude" }} right={{ name: "m h_acc", min: 0 }}
             series={[
               { name: "Altitude", data: pts(gnss, "altitude_m"), color: pal.line.disp_u || pal.lineDefault, width: 1.8 },
               { name: "h_acc", data: pts(gnss, "h_acc_m"), color: pal.lineDefault, width: 1.6, axis: 1, dash: "dashed" },
-            ]} /> : <div className="ppk-empty">Belum ada GNSS rows.</div>}
+            ]} /> : <div className="sensor-empty">
+              <strong>No GNSS rows</strong>
+              <span>
+                Pilih site/device lalu Refresh actual data.
+                Missing/gap tidak diinterpolasi.
+              </span>
+            </div>}
         </section>
       </div>
 
       <section className="panel sensor-event-panel">
         <div className="sensor-event-controls"><div><h2>Blast waveform</h2><span>Manual-upload acceleration event</span></div>
           <label><span>Event / source file</span><select value={eventFile} onChange={(e) => setEventFile(e.target.value)}><option value="">— no event —</option>{events.map((e) => <option key={String(e.event_id)} value={e.source_file}>{e.source_file}</option>)}</select></label></div>
-        {event && <div className="sensor-event-meta"><span>observed rate <b>{event.observed_sample_rate_hz ?? "—"} Hz</b></span><span>samples <b>{event.sample_count ?? "—"}</b></span><span>duration <b>{event.duration_ms ?? "—"} ms</b></span><span>quality <b>{event.quality_gate_status ?? "—"}</b></span><span>validation <b>{event.validation_status ?? "—"}</b></span></div>}
-        {waveMeta && <div className="sensor-transport-note">API transport: {waveMeta.returned_samples}/{waveMeta.total_samples} samples · downsampling {waveMeta.downsampling?.method || "—"} · stride {waveMeta.downsampling?.stride ?? "—"}. Raw persisted samples remain authoritative.</div>}
+        {event && (
+          <>
+            <div className="sensor-event-meta-grid">
+              <div><span>Event ID</span><strong>{event.event_id ?? "—"}</strong></div>
+              <div><span>Device</span><strong>{event.device_id || deviceId || "—"}</strong></div>
+              <div><span>Observed rate</span><strong>{event.observed_sample_rate_hz == null ? "—" : `${event.observed_sample_rate_hz} Hz`}</strong></div>
+              <div><span>Samples</span><strong>{event.sample_count ?? "—"}</strong></div>
+              <div><span>Duration</span><strong>{event.duration_ms == null ? "—" : `${event.duration_ms} ms`}</strong></div>
+              <div><span>Median gap</span><strong>{event.median_gap_ms == null ? "—" : `${event.median_gap_ms} ms`}</strong></div>
+              <div><span>Max gap</span><strong>{event.max_gap_ms == null ? "—" : `${event.max_gap_ms} ms`}</strong></div>
+              <div><span>Quality gate</span><strong>{event.quality_gate_status ?? "—"}</strong></div>
+              <div><span>Validation</span><strong>{event.validation_status ?? "—"}</strong></div>
+              <div><span>Received at</span><strong>{eventReceived}</strong></div>
+
+              <div className="sensor-event-wide">
+                <span>Source file</span>
+                <strong>{event.source_file || "—"}</strong>
+              </div>
+            </div>
+
+            <div className="sensor-metric-grid">
+              <div>
+                <span>ADXL355 PPA</span>
+                <strong>{event.adxl355_ppa_g == null ? "—" : `${fmt(event.adxl355_ppa_g, 4)} g`}</strong>
+              </div>
+              <div>
+                <span>ADXL355 PPV</span>
+                <strong>{event.adxl355_ppv_mm_s == null ? "—" : `${fmt(event.adxl355_ppv_mm_s, 3)} mm/s`}</strong>
+              </div>
+              <div>
+                <span>MPU9250 PPA</span>
+                <strong>{event.mpu9250_ppa_g == null ? "—" : `${fmt(event.mpu9250_ppa_g, 4)} g`}</strong>
+              </div>
+              <div>
+                <span>MPU9250 PPV</span>
+                <strong>{event.mpu9250_ppv_mm_s == null ? "—" : `${fmt(event.mpu9250_ppv_mm_s, 3)} mm/s`}</strong>
+              </div>
+            </div>
+          </>
+        )}
+
+        {waveMeta && (
+          <div className="sensor-transport-note">
+            <strong>Waveform transport</strong>
+            <span>
+              {waveMeta.returned_samples}/{waveMeta.total_samples} samples ·
+              {" "}{waveMeta.downsampling?.method || "—"} ·
+              stride {waveMeta.downsampling?.stride ?? "—"} ·
+              interpolation none
+            </span>
+            <small>
+              Raw persisted samples remain authoritative for technical metrics.
+            </small>
+          </div>
+        )}
         <div className="sensor-grid">
-          <div><h3>ADXL355 acceleration XYZ</h3>{wave.length ? <PanelChart height={270} left={{ name: "m/s²" }} series={[
+          <div><h3>ADXL355 acceleration XYZ</h3>{wave.length ? <PanelChart height={300} left={{ name: "m/s²" }} series={[
             { name: "ADXL355 X", data: pts(wave, "adxl355_x_mps2"), color: pal.line.ppa || pal.lineDefault, width: 1.5 },
             { name: "ADXL355 Y", data: pts(wave, "adxl355_y_mps2"), color: pal.line.tilt_x || pal.lineDefault, width: 1.3, dash: "dashed" },
             { name: "ADXL355 Z", data: pts(wave, "adxl355_z_mps2"), color: pal.line.displacement || pal.lineDefault, width: 1.3, dash: "dotted" },
-          ]} /> : <div className="ppk-empty">Pilih event.</div>}</div>
-          <div><h3>MPU9250 acceleration XYZ</h3>{wave.length ? <PanelChart height={270} left={{ name: "m/s²" }} series={[
+          ]} /> : <div className="sensor-empty">
+              <strong>No waveform selected</strong>
+              <span>
+                Pilih source file/event untuk memuat persisted acceleration samples.
+              </span>
+            </div>}</div>
+          <div><h3>MPU9250 acceleration XYZ</h3>{wave.length ? <PanelChart height={300} left={{ name: "m/s²" }} series={[
             { name: "MPU9250 X", data: pts(wave, "mpu9250_x_mps2"), color: pal.line.ppa_mpu9250 || pal.lineDefault, width: 1.5 },
             { name: "MPU9250 Y", data: pts(wave, "mpu9250_y_mps2"), color: pal.line.tilt_y || pal.lineDefault, width: 1.3, dash: "dashed" },
             { name: "MPU9250 Z", data: pts(wave, "mpu9250_z_mps2"), color: pal.line.disp_u || pal.lineDefault, width: 1.3, dash: "dotted" },
-          ]} /> : <div className="ppk-empty">Pilih event.</div>}</div>
+          ]} /> : <div className="sensor-empty">
+              <strong>No waveform selected</strong>
+              <span>
+                Pilih source file/event untuk memuat persisted acceleration samples.
+              </span>
+            </div>}</div>
         </div>
       </section>
 

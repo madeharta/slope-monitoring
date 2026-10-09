@@ -135,3 +135,101 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* staging visual closure */
+.blast-section-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+  margin-bottom:14px;
+}
+.blast-section-head h2{
+  margin:0;
+  color:var(--ink);
+  font-size:15px;
+  font-weight:700;
+}
+.blast-section-head span{
+  display:block;
+  margin-top:4px;
+  color:var(--ink-3);
+  font-size:11px;
+}
+.blast-role-badge{
+  flex:0 0 auto;
+  margin-top:0 !important;
+  padding:6px 8px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--panel-2);
+  color:var(--ink-2) !important;
+  font:700 10px/1 var(--mono);
+}
+.blast-page .admin-btn{
+  min-height:38px;
+  border:1px solid rgba(255,255,255,.30);
+  background:#27272a;
+  color:#fafafa;
+  font-weight:700;
+}
+.blast-page .admin-btn:hover:not(:disabled){
+  background:#3f3f46;
+  color:#fff;
+}
+.blast-page .admin-btn-primary{
+  border-color:#f4f4f5;
+  background:#f4f4f5;
+  color:#111113;
+}
+.blast-page .admin-btn-primary:hover:not(:disabled){
+  background:#fff;
+  color:#09090b;
+}
+.blast-page .admin-btn:focus-visible{
+  outline:2px solid #fff;
+  outline-offset:2px;
+}
+.blast-page .admin-btn:disabled{
+  opacity:.62;
+  background:#202024;
+  color:#c4c4cc;
+  border-color:rgba(255,255,255,.18);
+  cursor:not-allowed;
+}
+.blast-flow{
+  padding:0;
+  overflow:hidden;
+}
+.blast-flow-summary{
+  min-height:52px;
+  padding:14px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  cursor:pointer;
+  list-style:none;
+  color:var(--ink);
+}
+.blast-flow-summary::-webkit-details-marker{display:none}
+.blast-flow-summary span:first-child{
+  display:grid;
+  gap:3px;
+}
+.blast-flow-summary strong{font-size:13px}
+.blast-flow-summary small{
+  color:var(--ink-3);
+  font-size:10.5px;
+  font-weight:500;
+}
+.blast-flow-body{padding:0 16px 16px}
+.blast-flow[open] .blast-flow-summary{
+  border-bottom:1px solid var(--line);
+  margin-bottom:14px;
+}
+@media(max-width:650px){
+  .blast-section-head{display:grid}
+  .blast-role-badge{justify-self:start}
+}
