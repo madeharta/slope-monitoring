@@ -24,16 +24,38 @@ async def get_gnss_series(
     from_time: datetime | None = Query(default=None, alias="from"),
     to_time: datetime | None = Query(default=None, alias="to"),
     limit: int = Query(default=2000, ge=1, le=HARD_MAX_POINTS),
+    max_points: int | None = Query(default=None, ge=2, le=HARD_MAX_POINTS),
+    gnss_fix_type: int | None = Query(default=None),
+    validation_status: str | None = Query(default=None),
     user: TokenPayload = Depends(require_role("viewer")),
 ) -> dict:
     if from_time and to_time and from_time >= to_time:
         from common.errors import AppError, ErrorCode
         raise AppError(ErrorCode.VALIDATION_ERROR, "from must be earlier than to")
 
-    rows = await SensorReadRepository(get_db_pool(request)).list_gnss(
-        site_id=site_id, device_id=device_id, from_time=from_time,
-        to_time=to_time, limit=limit,
-    )
+    repository = SensorReadRepository(get_db_pool(request))
+    window = None
+
+    if max_points is not None:
+        window = await repository.get_gnss_window(
+            site_id=site_id,
+            device_id=device_id,
+            from_time=from_time,
+            to_time=to_time,
+            max_points=max_points,
+            gnss_fix_type=gnss_fix_type,
+            validation_status=validation_status,
+        )
+        rows = window["rows"]
+    else:
+        rows = await repository.list_gnss(
+            site_id=site_id,
+            device_id=device_id,
+            from_time=from_time,
+            to_time=to_time,
+            limit=limit,
+        )
+
     return {
         "schema_version": "sensor.gnss.v1",
         "source": "actual",
@@ -41,6 +63,25 @@ async def get_gnss_series(
         "validation_status": "unvalidated",
         "site_id": site_id,
         "device_id": device_id,
+        "requested_window": {
+            "from": _iso(from_time),
+            "to": _iso(to_time),
+        },
+        "window_summary": ({
+            "total_rows": window["total_rows"],
+            "returned_rows": window["returned_rows"],
+            "raw_first_timestamp": _iso(window["first_time"]),
+            "raw_last_timestamp": _iso(window["last_time"]),
+            "median_h_acc_m": window["median_h_acc_m"],
+            "median_gap_ms": window["median_gap_ms"],
+            "max_gap_ms": window["max_gap_ms"],
+            "downsampling": {
+                "method": "none" if window["stride"] == 1 else "deterministic_stride",
+                "stride": window["stride"],
+                "display_only": True,
+                "note": "Raw persisted GNSS rows remain authoritative for continuity statistics.",
+            },
+        } if window is not None else None),
         "rows": [{
             "timestamp_utc": _iso(r["time"]),
             "device_id": r["device_id"], "site_id": r["site_id"],

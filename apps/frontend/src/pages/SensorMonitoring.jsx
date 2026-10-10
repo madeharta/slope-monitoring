@@ -136,6 +136,31 @@ function sourceDefaults(source) {
   };
 }
 
+function actualApiWindow(f) {
+  if (f.range === "all") return { from: null, to: null };
+
+  if (f.range === "custom") {
+    const fromDate = f.from ? new Date(f.from) : null;
+    const toDate = f.to ? new Date(f.to) : null;
+
+    return {
+      from: fromDate && Number.isFinite(fromDate.getTime()) ? fromDate.toISOString() : null,
+      to: toDate && Number.isFinite(toDate.getTime()) ? toDate.toISOString() : null,
+    };
+  }
+
+  const hours = { "1h": 1, "6h": 6, "24h": 24, "7d": 168 }[f.range];
+  if (!hours) return { from: null, to: null };
+
+  const toDate = new Date();
+  const fromDate = new Date(toDate.getTime() - hours * 3600000);
+
+  return {
+    from: fromDate.toISOString(),
+    to: toDate.toISOString(),
+  };
+}
+
 function rangeBounds(rows, f) {
   if (!rows.length) return [null, null];
   if (f.range === "custom") {
@@ -159,7 +184,11 @@ function filterGnss(rows, f) {
     if (to != null && t > to) return false;
     if (f.fixType !== "all" && String(r.gnss_fix_type) !== f.fixType) return false;
     if (f.validation !== "all" && String(r.validation_status || "unvalidated") !== f.validation) return false;
-    if (f.quality !== "all" && String(r.quality_flag || "unavailable") !== f.quality) return false;
+    if (
+      f.quality !== "all" &&
+      r.quality_flag != null &&
+      String(r.quality_flag) !== f.quality
+    ) return false;
     return true;
   });
 }
@@ -237,6 +266,7 @@ export default function SensorMonitoring() {
   const [draft, setDraft] = useState(() => sourceDefaults(SOURCE_ACTUAL));
   const [applied, setApplied] = useState(() => sourceDefaults(SOURCE_ACTUAL));
   const [rawGnss, setRawGnss] = useState([]);
+  const [gnssWindow, setGnssWindow] = useState(null);
   const [rawEvents, setRawEvents] = useState([]);
   const [eventFile, setEventFile] = useState("");
   const [wave, setWave] = useState([]);
@@ -282,6 +312,40 @@ export default function SensorMonitoring() {
   );
 
   const stats = useMemo(() => gnssStats(gnss), [gnss]);
+
+  const continuity = useMemo(() => {
+    if (applied.source === SOURCE_ACTUAL && gnssWindow) {
+      const first = gnssWindow.raw_first_timestamp
+        ? new Date(gnssWindow.raw_first_timestamp)
+        : null;
+      const last = gnssWindow.raw_last_timestamp
+        ? new Date(gnssWindow.raw_last_timestamp)
+        : null;
+
+      return {
+        medianHAcc: gnssWindow.median_h_acc_m,
+        medianGapMs: gnssWindow.median_gap_ms,
+        maxGapMs: gnssWindow.max_gap_ms,
+        spanMs: first && last ? last - first : null,
+        firstTimestamp: gnssWindow.raw_first_timestamp,
+        lastTimestamp: gnssWindow.raw_last_timestamp,
+        totalRows: Number(gnssWindow.total_rows || 0),
+        returnedRows: Number(gnssWindow.returned_rows || 0),
+      };
+    }
+
+    return {
+      medianHAcc: stats.medianHAcc,
+      medianGapMs: stats.medianGapMs,
+      maxGapMs: stats.maxGapMs,
+      spanMs: stats.spanMs,
+      firstTimestamp: stats.first?.timestamp_utc || null,
+      lastTimestamp: stats.latest?.timestamp_utc || null,
+      totalRows: gnss.length,
+      returnedRows: gnss.length,
+    };
+  }, [applied.source, gnssWindow, stats, gnss.length]);
+
   const adxlStats = useMemo(() => waveformStats(wave, "adxl355"), [wave]);
   const mpuStats = useMemo(() => waveformStats(wave, "mpu9250"), [wave]);
 
@@ -325,10 +389,23 @@ export default function SensorMonitoring() {
       return;
     }
 
+    if (next.range === "custom") {
+      const apiWindow = actualApiWindow(next);
+      if (!apiWindow.from || !apiWindow.to) {
+        setError("Custom time range membutuhkan From dan To yang valid.");
+        return;
+      }
+      if (new Date(apiWindow.from) >= new Date(apiWindow.to)) {
+        setError("Custom time range: From harus lebih awal daripada To.");
+        return;
+      }
+    }
+
     setBusy(true);
     setError("");
     setWave([]);
     setWaveMeta(null);
+    setGnssWindow(null);
     setEventFile("");
 
     try {
@@ -341,14 +418,33 @@ export default function SensorMonitoring() {
         const requests = [];
 
         if (wantsGnss) {
+          const params = new URLSearchParams({
+            site_id: next.siteId,
+            device_id: next.deviceId,
+            max_points: "5000",
+          });
+
+          const apiWindow = actualApiWindow(next);
+          if (apiWindow.from) params.set("from", apiWindow.from);
+          if (apiWindow.to) params.set("to", apiWindow.to);
+
+          if (next.fixType !== "all") {
+            params.set("gnss_fix_type", next.fixType);
+          }
+
+          if (next.validation !== "all") {
+            params.set("validation_status", next.validation);
+          }
+
           requests.push(
-            authFetch(
-              `/api/v1/sensors/gnss?site_id=${encodeURIComponent(next.siteId)}&device_id=${encodeURIComponent(next.deviceId)}&limit=2000`,
-            ).then(async (r) => {
-              const b = await r.json().catch(() => ({}));
-              if (!r.ok) throw new Error(b.detail || `GNSS HTTP ${r.status}`);
-              nextGnss = b.rows || [];
-            }),
+            authFetch(`/api/v1/sensors/gnss?${params.toString()}`)
+              .then(async (r) => {
+                const b = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(b.detail || `GNSS HTTP ${r.status}`);
+
+                nextGnss = b.rows || [];
+                setGnssWindow(b.window_summary || null);
+              }),
           );
         }
 
@@ -443,8 +539,8 @@ export default function SensorMonitoring() {
     ? new Date(latest.timestamp_utc).toLocaleString()
     : "—";
 
-  const timeRange = stats.first && stats.latest
-    ? `${new Date(stats.first.timestamp_utc).toLocaleString()} → ${new Date(stats.latest.timestamp_utc).toLocaleString()}`
+  const timeRange = continuity.firstTimestamp && continuity.lastTimestamp
+    ? `${new Date(continuity.firstTimestamp).toLocaleString()} → ${new Date(continuity.lastTimestamp).toLocaleString()}`
     : "—";
 
   const eventReceived = event?.source_received_at
@@ -640,7 +736,7 @@ export default function SensorMonitoring() {
           <button className="admin-btn" disabled={busy} onClick={resetFilters}>Reset</button>
           <span>
             No auto-refresh. Filter changes remain draft until Apply.
-            {applied.source === SOURCE_ACTUAL && " Actual GNSS is currently limited to the latest ≤2000 rows and ≤50 accel events from the API."}
+            {applied.source === SOURCE_ACTUAL && " Actual GNSS uses server-side historical from/to windows with ≤5000 display points; continuity metrics remain raw-window server summaries. Accel events remain latest ≤50."}
           </span>
         </div>
       </section>
@@ -650,12 +746,12 @@ export default function SensorMonitoring() {
       <div className="sensor-v2-kpis">
         <div>
           <span>GNSS rows</span>
-          <strong>{gnss.length.toLocaleString()}</strong>
-          <small>{applied.dataType === "accel" ? "GNSS hidden by filter" : "filtered rows"}</small>
+          <strong>{continuity.totalRows.toLocaleString()}</strong>
+          <small>{applied.dataType === "accel" ? "GNSS hidden by filter" : `${continuity.returnedRows.toLocaleString()} display rows`}</small>
         </div>
         <div>
           <span>Time span</span>
-          <strong>{formatDuration(stats.spanMs)}</strong>
+          <strong>{formatDuration(continuity.spanMs)}</strong>
           <small>{timeRange}</small>
         </div>
         <div>
@@ -665,20 +761,55 @@ export default function SensorMonitoring() {
         </div>
         <div>
           <span>Median h_acc</span>
-          <strong>{fmtMaybe(stats.medianHAcc, " m", 3)}</strong>
+          <strong>{fmtMaybe(continuity.medianHAcc, " m", 3)}</strong>
           <small>receiver-reported horizontal accuracy</small>
         </div>
         <div>
           <span>Median interval</span>
-          <strong>{fmtMaybe(stats.medianGapMs, " ms", 0)}</strong>
+          <strong>{fmtMaybe(continuity.medianGapMs, " ms", 0)}</strong>
           <small>based on persisted row timestamps</small>
         </div>
         <div>
           <span>Max gap</span>
-          <strong>{fmtMaybe(stats.maxGapMs, " ms", 0)}</strong>
+          <strong>{fmtMaybe(continuity.maxGapMs, " ms", 0)}</strong>
           <small>no interpolation applied</small>
         </div>
       </div>
+
+      {applied.source === SOURCE_ACTUAL && gnssWindow && (
+        <section className="panel sensor-v2-gnss-transport">
+          <div className="sensor-v2-section-head">
+            <div>
+              <span className="sensor-v2-eyebrow">Historical transport</span>
+              <h2>GNSS window representation</h2>
+            </div>
+          </div>
+
+          <div className="sensor-v2-transport-grid">
+            <div>
+              <span>Raw window rows</span>
+              <strong>{gnssWindow.total_rows?.toLocaleString?.() ?? "—"}</strong>
+            </div>
+            <div>
+              <span>Display rows</span>
+              <strong>{gnssWindow.returned_rows?.toLocaleString?.() ?? "—"}</strong>
+            </div>
+            <div>
+              <span>Method</span>
+              <strong>{gnssWindow.downsampling?.method || "—"}</strong>
+            </div>
+            <div>
+              <span>Stride</span>
+              <strong>{gnssWindow.downsampling?.stride ?? "—"}</strong>
+            </div>
+          </div>
+
+          <p>
+            Display sampling spans the requested window. Median interval and max gap are derived from raw persisted timestamps,
+            not from downsampled display points. Interpolation remains disabled.
+          </p>
+        </section>
+      )}
 
       <section className="panel sensor-v2-quality">
         <div className="sensor-v2-section-head">

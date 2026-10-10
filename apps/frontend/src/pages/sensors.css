@@ -961,3 +961,68 @@
   }
   .sensor-v2-source-switch button{width:100%}
 }
+
+
+/* Sensor Monitoring v2 Patch B historical window */
+.sensor-v2-gnss-transport{
+  width:100%;
+  max-width:1500px;
+  margin:0 auto 14px;
+  padding:14px 16px;
+  box-sizing:border-box;
+  flex:0 0 auto;
+}
+
+.sensor-v2-gnss-transport h2{
+  margin:5px 0 0;
+  color:var(--ink);
+  font-size:14px;
+}
+
+.sensor-v2-transport-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+}
+
+.sensor-v2-transport-grid>div{
+  min-width:0;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel-2);
+  display:grid;
+  gap:5px;
+}
+
+.sensor-v2-transport-grid span{
+  color:var(--ink-3);
+  font-size:9.5px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.sensor-v2-transport-grid strong{
+  color:var(--ink-2);
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
+
+.sensor-v2-gnss-transport p{
+  margin:10px 0 0;
+  color:var(--ink-3);
+  font-size:10.5px;
+  line-height:1.5;
+}
+
+@media(max-width:850px){
+  .sensor-v2-transport-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:520px){
+  .sensor-v2-transport-grid{
+    grid-template-columns:1fr;
+  }
+}
