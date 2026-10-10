@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useStore, wibClock } from "../store";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -36,6 +36,7 @@ export default function TopBar() {
   const isMapRoute = location.pathname === "/";
   const { auth, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { navKey, overview, connected, clock, variant, toggleVariant, setNav } = useStore(
     (s) => ({
       navKey: s.nav, overview: s.overview, connected: s.connected, clock: s.clock,
@@ -57,6 +58,33 @@ export default function TopBar() {
     { key: "blast", label: "Blast", icon: I.bell, onClick: () => { nav("/blast"); setNav("blast"); } },
     { key: "alarms", label: "Alarms", icon: I.bell, onClick: () => setNav("alarms") },
   ];
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileNavOpen]);
+
+  const runMobileNav = (item) => {
+    item.onClick();
+    setMobileNavOpen(false);
+  };
+
+  const isItemActive = (item) => (
+    navKey === item.key ||
+    (item.key === "analytics" && location.pathname.startsWith("/sensors")) ||
+    (item.key === "ppk" && location.pathname.startsWith("/ppk")) ||
+    (item.key === "blast" && location.pathname.startsWith("/blast"))
+  );
   return (
     <header className={"topbar" + (isMapRoute ? "" : " topbar--solid")}>
       <div className="brand">
@@ -65,8 +93,8 @@ export default function TopBar() {
       </div>
       <nav className="topnav" aria-label="Primary">
         {items.map((it) => (
-          <button key={it.key} className={"nav-item" + ((navKey === it.key || (it.key === "analytics" && location.pathname.startsWith("/sensors")) || (it.key === "ppk" && location.pathname.startsWith("/ppk")) || (it.key === "blast" && location.pathname.startsWith("/blast"))) ? " on" : "")}
-            aria-current={(navKey === it.key || (it.key === "analytics" && location.pathname.startsWith("/sensors")) || (it.key === "ppk" && location.pathname.startsWith("/ppk")) || (it.key === "blast" && location.pathname.startsWith("/blast"))) ? "page" : "false"} onClick={it.onClick}>
+          <button key={it.key} className={"nav-item" + (isItemActive(it) ? " on" : "")}
+            aria-current={isItemActive(it) ? "page" : "false"} onClick={it.onClick}>
             {it.icon}<span>{it.label}</span>
           </button>
         ))}
@@ -84,11 +112,13 @@ export default function TopBar() {
           </svg>
           {operationalReady ? (
             <>
-              <span className="un">{active}</span> active
+              <span className="un">{active}</span>
+              <span className="alarm-text">active</span>
             </>
           ) : (
             <>
-              <span className="un">0</span> operational{" "}
+              <span className="un">0</span>
+              <span className="alarm-text">operational</span>
               <span className="rlbl">suppressed</span>
             </>
           )}
@@ -102,6 +132,33 @@ export default function TopBar() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" /></svg>
           {variant === "editorial" ? "Editorial" : "ISA-101"}
         </button>
+        <button
+          className="mobile-nav-toggle"
+          type="button"
+          aria-label={mobileNavOpen ? "Tutup navigasi" : "Buka navigasi"}
+          aria-expanded={mobileNavOpen}
+          aria-controls="mobile-primary-nav"
+          onClick={() => {
+            setProfileOpen(false);
+            setMobileNavOpen((value) => !value);
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            {mobileNavOpen ? (
+              <>
+                <path d="M6 6l12 12" />
+                <path d="M18 6 6 18" />
+              </>
+            ) : (
+              <>
+                <path d="M4 7h16" />
+                <path d="M4 12h16" />
+                <path d="M4 17h16" />
+              </>
+            )}
+          </svg>
+        </button>
+
         <div className="profile-menu" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setProfileOpen(false); }}>
           <button className="avatar" aria-label="Account" aria-expanded={profileOpen} onClick={() => setProfileOpen((v) => !v)}>
             {initialsFromEmail(auth?.email)}
@@ -154,6 +211,41 @@ export default function TopBar() {
           )}
         </div>
       </div>
+
+      {mobileNavOpen && (
+        <div id="mobile-primary-nav" className="mobile-nav-panel" role="dialog" aria-label="Primary navigation">
+          <nav className="mobile-nav-list" aria-label="Primary mobile">
+            {items.map((it) => (
+              <button
+                key={it.key}
+                type="button"
+                className={"mobile-nav-item" + (isItemActive(it) ? " on" : "")}
+                aria-current={isItemActive(it) ? "page" : "false"}
+                onClick={() => runMobileNav(it)}
+              >
+                {it.icon}
+                <span>{it.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="mobile-nav-status">
+            <div>
+              <span className={"mobile-status-dot" + (connected ? "" : " off")} />
+              <span>{connected ? "Connected / Live" : "Offline"}</span>
+            </div>
+
+            <div className={operationalReady ? "ready" : "suppressed"}>
+              <span className="mobile-status-dot" />
+              <span>
+                {operationalReady
+                  ? `${active} operational alarm${active === 1 ? "" : "s"} active`
+                  : "Operational alarms suppressed pending validation"}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
