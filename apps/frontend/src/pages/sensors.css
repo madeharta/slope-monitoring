@@ -644,3 +644,320 @@
   height:auto !important;
   min-height:max-content !important;
 }
+
+
+
+/* Sensor Monitoring v2 analytics dashboard */
+.sensor-v2-head{
+  align-items:flex-end;
+}
+.sensor-v2-head h1{
+  margin:0;
+  font-size:20px !important;
+  font-weight:720 !important;
+}
+.sensor-v2-head-meta{
+  margin-left:auto;
+  display:grid;
+  justify-items:end;
+  gap:3px;
+  color:var(--ink-3);
+  font-size:10.5px;
+}
+.sensor-v2-head-meta strong{
+  color:var(--ink-2);
+  font-size:11.5px;
+}
+.sensor-v2-source,
+.sensor-v2-filter,
+.sensor-v2-quality,
+.sensor-v2-provenance{
+  width:100%;
+  max-width:1500px;
+  margin:0 auto 14px;
+  padding:16px;
+  box-sizing:border-box;
+  flex:0 0 auto;
+}
+.sensor-v2-source{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:
+    "copy switch"
+    "banner banner";
+  gap:12px 16px;
+  align-items:center;
+}
+.sensor-v2-source>div:first-child{grid-area:copy}
+.sensor-v2-source-switch{
+  grid-area:switch;
+  display:flex;
+  gap:6px;
+  padding:4px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+}
+.sensor-v2-source-switch button{
+  min-height:34px;
+  padding:0 12px;
+  border-radius:7px;
+  color:var(--ink-3);
+  font-size:11.5px;
+  font-weight:700;
+}
+.sensor-v2-source-switch button:hover{
+  color:var(--ink);
+  background:rgba(255,255,255,.04);
+}
+.sensor-v2-source-switch button.on{
+  background:var(--ink);
+  color:var(--bg);
+}
+.sensor-v2-eyebrow{
+  color:var(--ink-3);
+  font:700 9.5px/1.2 var(--mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.sensor-v2-source h2,
+.sensor-v2-filter h2,
+.sensor-v2-quality h2,
+.sensor-v2-provenance h2{
+  margin:5px 0 0;
+  font-size:15px;
+  color:var(--ink);
+}
+.sensor-v2-source p{
+  margin:4px 0 0;
+  color:var(--ink-3);
+  font-size:11.5px;
+}
+.sensor-v2-source-banner{
+  grid-area:banner;
+  width:100%;
+  padding:8px 10px;
+  border-radius:8px;
+  text-align:center;
+  font:800 10px/1.2 var(--mono);
+  letter-spacing:.065em;
+  box-sizing:border-box;
+}
+.sensor-v2-source-banner.is-reference{
+  border:1px solid var(--line);
+  background:var(--panel-2);
+  color:var(--ink-2);
+}
+.sensor-v2-source-banner.is-synthetic{
+  border:2px solid #f0b75d;
+  background:#4a2f08;
+  color:#fff1c7;
+}
+.sensor-v2-filter-head,
+.sensor-v2-section-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  margin-bottom:12px;
+}
+.sensor-v2-dirty{
+  flex:0 0 auto;
+  padding:6px 8px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  color:var(--ink-3);
+  font:700 9.5px/1 var(--mono);
+  text-transform:uppercase;
+}
+.sensor-v2-dirty.is-dirty{
+  border-color:#b88b43;
+  color:#ffe7ac;
+  background:#35240c;
+}
+.sensor-v2-filter-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.sensor-v2-filter-grid label{
+  min-width:0;
+  display:grid;
+  gap:6px;
+}
+.sensor-v2-filter-grid label>span{
+  color:var(--ink-3);
+  font-size:9.5px;
+  font-weight:700;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+.sensor-v2-filter-grid select,
+.sensor-v2-filter-grid input{
+  min-width:0;
+  width:100%;
+  height:38px;
+  padding:0 10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel-2);
+  color:var(--ink);
+  box-sizing:border-box;
+}
+.sensor-v2-filter-actions,
+.sensor-v2-wave-actions{
+  margin-top:12px;
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.sensor-v2-filter-actions>span,
+.sensor-v2-wave-actions>span{
+  color:var(--ink-3);
+  font-size:10.5px;
+  line-height:1.4;
+}
+.sensor-v2-kpis{
+  width:100%;
+  max-width:1500px;
+  margin:0 auto 14px;
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:10px;
+  flex:0 0 auto;
+}
+.sensor-v2-kpis>div,
+.sensor-v2-wave-kpis>div{
+  min-width:0;
+  padding:13px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel);
+  display:grid;
+  gap:5px;
+}
+.sensor-v2-kpis span,
+.sensor-v2-wave-kpis span{
+  color:var(--ink-3);
+  font-size:9.5px;
+  font-weight:700;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+.sensor-v2-kpis strong,
+.sensor-v2-wave-kpis strong{
+  color:var(--ink);
+  font-size:17px;
+  line-height:1.2;
+  overflow-wrap:anywhere;
+}
+.sensor-v2-kpis small,
+.sensor-v2-wave-kpis small{
+  color:var(--ink-3);
+  font-size:9.5px;
+  line-height:1.35;
+}
+.sensor-v2-quality-grid{
+  display:grid;
+  grid-template-columns:2fr 1fr 1fr;
+  gap:10px;
+}
+.sensor-v2-quality-grid>div{
+  min-width:0;
+  padding:11px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel-2);
+  display:grid;
+  gap:6px;
+}
+.sensor-v2-quality-grid>div>span,
+.sensor-v2-provenance-grid span{
+  color:var(--ink-3);
+  font-size:9.5px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.sensor-v2-quality-grid strong,
+.sensor-v2-provenance-grid strong{
+  color:var(--ink-2);
+  font-size:11px;
+  overflow-wrap:anywhere;
+}
+.sensor-v2-fix-chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.sensor-v2-fix-chips>span{
+  padding:5px 7px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  color:var(--ink-2);
+  font:600 10px/1 var(--mono);
+}
+.sensor-v2-event{
+  flex:0 0 auto;
+}
+.sensor-v2-wave-kpis{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:8px;
+  margin:12px 0;
+}
+.sensor-v2-wave-kpis strong{
+  font-size:13px;
+}
+.sensor-v2-provenance-grid{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:8px;
+}
+.sensor-v2-provenance-grid>div{
+  min-width:0;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel-2);
+  display:grid;
+  gap:5px;
+}
+.sensor-v2-provenance p{
+  margin:12px 0 0;
+  color:var(--ink-3);
+  font-size:11px;
+  line-height:1.55;
+}
+@media(max-width:1200px){
+  .sensor-v2-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .sensor-v2-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .sensor-v2-wave-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .sensor-v2-provenance-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:900px){
+  .sensor-v2-source{
+    grid-template-columns:1fr;
+    grid-template-areas:"copy" "switch" "banner";
+  }
+  .sensor-v2-source-switch{
+    justify-self:start;
+  }
+  .sensor-v2-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sensor-v2-quality-grid{grid-template-columns:1fr}
+  .sensor-v2-head-meta{display:none}
+}
+@media(max-width:650px){
+  .sensor-v2-filter-grid,
+  .sensor-v2-kpis,
+  .sensor-v2-wave-kpis,
+  .sensor-v2-provenance-grid{
+    grid-template-columns:1fr;
+  }
+  .sensor-v2-source-switch{
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr;
+  }
+  .sensor-v2-source-switch button{width:100%}
+}
