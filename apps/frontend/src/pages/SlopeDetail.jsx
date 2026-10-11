@@ -210,6 +210,7 @@ export default function SlopeDetail() {
   const navigate = useNavigate();
   const { overview, recent, variant } = useStore((s) => ({ overview: s.overview, recent: s.recent, variant: s.variant }));
   const pal = getPalette(variant);
+  const operationalReady = overview?.validation?.operational_ready === true;
   const [hours, setHours] = useState(24);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -300,6 +301,7 @@ export default function SlopeDetail() {
   // device-isolate opacity: dim series not in the selected group
   const op = (q) => (device === null || GROUP_OF[q] === device ? 1 : 0.14);
   const groupStatus = (g) => {
+    if (!operationalReady && g.key === "gnss") return "unknown";
     const sts = g.quantities.map((q) => statusFor(th[q], last(Q(q))));
     return sts.includes("bahaya") ? "bahaya" : sts.includes("siaga") ? "siaga" : "normal";
   };
@@ -307,10 +309,10 @@ export default function SlopeDetail() {
 
   // ---- stat-card scalars ----
   const dispNow = last(QD("displacement"));
-  const dispStatus = statusFor(th.displacement, dispNow);
+  const dispStatus = operationalReady ? statusFor(th.displacement, dispNow) : "unknown";
   const tiltNow = last(Q("tilt_x"));
   const velNow = last(derived.velocity);
-  const velStatus = statusFor(VEL_TH, velNow);
+  const velStatus = operationalReady ? statusFor(VEL_TH, velNow) : "unknown";
   // FIX (2026-09-20): pore_pressure dihapus — tidak ada piezometer di
   // hardware sistem ini (cuma GNSS + accelerometer). Stat card + panel
   // "Rainfall vs Pore Water Pressure" yang memakainya juga dihapus di
@@ -336,7 +338,7 @@ export default function SlopeDetail() {
   const disp24 = dispNow != null ? dispNow - (valueAt(QD("displacement"), Date.now() - DAY) ?? dispNow) : null;
 
   // ---- inverse-velocity estimate (suppressed if the slope is not accelerating) ----
-  const est = estimateFailure(QD("displacement"));
+  const est = operationalReady ? estimateFailure(QD("displacement")) : null;
 
   // ---- per-panel dynamic ranges ----
   const dispMax = Math.max(15, Math.ceil(maxOf(QD("displacement"), 12) * 1.1));
@@ -361,8 +363,13 @@ export default function SlopeDetail() {
           <button onClick={() => navigate("/")}>← Overview</button><span>/</span>
           <span className="cur">{name}</span>
         </div>
-        <span className={"badge " + data.status}><span className="pip" />{LABEL[data.status]}</span>
-        <span className="action2">{data.action}</span>
+        <span className={"badge " + (operationalReady ? data.status : "unknown")}>
+          <span className="pip" />
+          {operationalReady ? LABEL[data.status] : LABEL.unknown}
+        </span>
+        <span className="action2">
+          {operationalReady ? data.action : "Technical telemetry only · production validation pending"}
+        </span>
         {site && (
           <span className="site-meta">{id} · {site.lat?.toFixed(4)}, {site.lon?.toFixed(4)}</span>
         )}
@@ -427,7 +434,19 @@ export default function SlopeDetail() {
           const st = groupStatus(g);
           return (
             <button key={g.key} className={"dev-pill" + (device === g.key ? " on" : "")} onClick={() => setDevice((d) => (d === g.key ? null : g.key))}>
-              <span className="dev-dot" style={{ background: st === "bahaya" ? "var(--bahaya)" : st === "siaga" ? "var(--siaga)" : "var(--ok)" }} />
+              <span
+                className="dev-dot"
+                style={{
+                  background:
+                    st === "bahaya"
+                      ? "var(--bahaya)"
+                      : st === "siaga"
+                        ? "var(--siaga)"
+                        : st === "unknown"
+                          ? "var(--ink-3)"
+                          : "var(--ok)",
+                }}
+              />
               {g.label}
             </button>
           );
@@ -443,7 +462,12 @@ export default function SlopeDetail() {
       <div className="statcard-row">
         <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />
         <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="deg · saat ledakan terakhir (bukan real-time)" status={statusFor(th.tilt_x, tiltNow)} />
-        <StatCard label="Slope velocity" value={fmt(velNow, 1)} sub={`mm/day · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`} status={velStatus} />
+        <StatCard
+          label="Slope velocity"
+          value={fmt(velNow, 1)}
+          sub={`mm/day · derived QA only · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`}
+          status={velStatus}
+        />
         <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (bukan sensor lapangan)" status="normal" />
       </div>
 
@@ -463,7 +487,9 @@ export default function SlopeDetail() {
               { label: "ΔX east", color: col("disp_e"), dash: "dashed" },
               { label: "ΔY north", color: col("disp_n"), dash: "dotted" },
               { label: "ΔZ vertical", color: col("disp_u"), dash: "dotted" },
-              { label: "10.00 mm limit", color: STATUS.bahaya, dash: "dashed" },
+              ...(operationalReady
+                ? [{ label: "10.00 mm limit", color: STATUS.bahaya, dash: "dashed" }]
+                : []),
             ]} />
             <PanelChart height={232}
               left={{ name: "mm", min: dispMin, max: dispMax }}
@@ -473,8 +499,12 @@ export default function SlopeDetail() {
                 { name: "ΔX east", data: QD("disp_e"), color: col("disp_e"), width: 1.6, dash: "dashed", opacity: op("disp_e") },
                 { name: "3D resultant", data: QD("displacement"), color: col("displacement"), width: 2.4, z: 3, opacity: op("displacement") },
               ]}
-              bands={[{ from: th.displacement?.bahaya ?? 10, to: dispMax, color: BAND.bahaya }]}
-              hlines={[{ y: th.displacement?.bahaya ?? 10, color: STATUS.bahaya, label: (th.displacement?.bahaya ?? 10).toFixed(2) }]}
+              bands={operationalReady
+                ? [{ from: th.displacement?.bahaya ?? 10, to: dispMax, color: BAND.bahaya }]
+                : []}
+              hlines={operationalReady
+                ? [{ y: th.displacement?.bahaya ?? 10, color: STATUS.bahaya, label: (th.displacement?.bahaya ?? 10).toFixed(2) }]
+                : []}
             />
           </div>
         </Panel>
@@ -522,7 +552,13 @@ export default function SlopeDetail() {
           </div>
         </Panel>
 
-        {est ? (
+        {!operationalReady ? (
+          <Panel title="Time to Failure" tag="unvalidated">
+            <div className="tf-stable">
+              Suppressed while production geodetic validation is incomplete. No failure-time estimate is generated from unvalidated displacement.
+            </div>
+          </Panel>
+        ) : est ? (
           <Panel title="Time to Failure" tag="estimate">
             <TimeToFailure estimate={est} />
           </Panel>
@@ -532,12 +568,18 @@ export default function SlopeDetail() {
           </Panel>
         )}
 
-        <Panel title="Slope Velocity & Acceleration" sub="derived from GNSS resultant" right={readout(velNow, "mm/day", velStatus)}>
+        <Panel
+          title="Slope Velocity & Acceleration"
+          sub={operationalReady ? "derived from GNSS resultant" : "derived QA telemetry · UNVALIDATED"}
+          right={readout(velNow, "mm/day", velStatus)}
+        >
           <div className="panel-body">
             <Legend items={[
               { label: "Velocity · mm/day", color: col("velocity") },
               { label: "Acceleration · mm/day²", color: col("acceleration"), dash: "dashed" },
-              { label: "Tertiary creep", color: BAND.bahaya, kind: "box" },
+              ...(operationalReady
+                ? [{ label: "Tertiary creep", color: BAND.bahaya, kind: "box" }]
+                : []),
             ]} />
             <PanelChart height={232}
               left={{ name: "mm/day", min: 0, max: velMax }}
@@ -546,10 +588,12 @@ export default function SlopeDetail() {
                 { name: "Acceleration", data: derived.acceleration, color: col("acceleration"), width: 1.6, dash: "dashed", axis: 1, opacity: op("acceleration") },
                 { name: "Velocity", data: derived.velocity, color: col("velocity"), width: 2.4, z: 3, opacity: op("velocity") },
               ]}
-              bands={[
-                { from: VEL_TH.siaga, to: VEL_TH.bahaya, color: BAND.siaga },
-                { from: VEL_TH.bahaya, to: velMax, color: BAND.bahaya },
-              ]}
+              bands={operationalReady
+                ? [
+                    { from: VEL_TH.siaga, to: VEL_TH.bahaya, color: BAND.siaga },
+                    { from: VEL_TH.bahaya, to: velMax, color: BAND.bahaya },
+                  ]
+                : []}
             />
           </div>
         </Panel>
