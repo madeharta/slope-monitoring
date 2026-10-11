@@ -222,26 +222,102 @@ export default function SlopeDetail() {
 
   useEffect(() => {
     let alive = true;
+    let timer = null;
+    let controller = null;
+    let retryCount = 0;
+
+    const POLL_MS = 8000;
+    const MAX_BACKOFF_MS = 60000;
+
     // Kalau customFrom DAN customTo keduanya diisi -> kirim rentang eksplisit.
-    // Kalau tidak -> perilaku lama (hours relatif ke sekarang, tombol preset).
+    // Kalau tidak -> preset/live range dan polling completion-scheduled.
     const fromIso = customFrom ? new Date(customFrom).toISOString() : null;
     const toIso = customTo ? new Date(customTo).toISOString() : null;
-    const load = () =>
-      getSite(id, hours, fromIso, toIso)
-        .then((d) => {
-          if (alive) {
-            setData(d);
-            setTableNow(Date.now());
-          }
-        })
-        .catch(() => {});
+    const shouldPoll = !(fromIso && toIso);
+
+    const schedule = (delayMs) => {
+      if (!alive || !shouldPoll) return;
+
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+
+      timer = setTimeout(() => {
+        timer = null;
+        load();
+      }, Math.max(0, delayMs));
+    };
+
+    const fallbackBackoff = () => {
+      const base = Math.min(
+        MAX_BACKOFF_MS,
+        POLL_MS * (2 ** retryCount),
+      );
+
+      retryCount = Math.min(retryCount + 1, 3);
+
+      return base + Math.floor(Math.random() * 1000);
+    };
+
+    const load = async () => {
+      if (!alive || controller !== null) return;
+
+      controller = new AbortController();
+
+      try {
+        const d = await getSite(
+          id,
+          hours,
+          fromIso,
+          toIso,
+          { signal: controller.signal },
+        );
+
+        if (!alive) return;
+
+        setData(d);
+        setTableNow(Date.now());
+
+        retryCount = 0;
+        schedule(POLL_MS);
+      } catch (error) {
+        if (!alive || error?.name === "AbortError") return;
+
+        // Historical custom ranges intentionally remain one-shot.
+        if (!shouldPoll) return;
+
+        if (
+          error?.status === 429 &&
+          Number.isFinite(error?.retryAfterMs)
+        ) {
+          schedule(error.retryAfterMs);
+          return;
+        }
+
+        // 429 tanpa Retry-After, network failure, dan transient error lain
+        // memakai bounded exponential backoff + jitter.
+        schedule(fallbackBackoff());
+      } finally {
+        controller = null;
+      }
+    };
+
+    // Immediate first request.
     load();
-    // Polling 8s dimatikan untuk rentang kustom (masa lalu tidak berubah,
-    // tidak perlu refetch berulang) — cuma aktif untuk preset (data "sampai
-    // sekarang" yang memang terus bertambah).
-    if (fromIso && toIso) return () => { alive = false; };
-    const t = setInterval(load, 8000);
-    return () => { alive = false; clearInterval(t); };
+
+    return () => {
+      alive = false;
+
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      if (controller) {
+        controller.abort();
+        controller = null;
+      }
+    };
   }, [id, hours, customFrom, customTo]);
 
   const name = overview?.slopes.find((s) => s.site_id === id)?.name || id;
