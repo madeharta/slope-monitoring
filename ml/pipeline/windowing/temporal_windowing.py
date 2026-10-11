@@ -65,6 +65,7 @@ class AlignedFeatureFrame:
 
     timestamp_utc: datetime
     values: Mapping[str, Mapping[str, FeatureCell]]
+    site_context: Mapping[str, FeatureCell] | None = None
 
     def __post_init__(self) -> None:
         require_aware_datetime(
@@ -115,6 +116,7 @@ def build_temporal_graph_sample(
     adjacency_method: str,
     adjacency_provenance: str,
     target: RegressionTarget,
+    site_context_definitions: Sequence[FeatureDefinition] = (),
 ) -> TemporalGraphSample:
     """Build one canonical temporal graph sample without fabricating data."""
 
@@ -127,11 +129,29 @@ def build_temporal_graph_sample(
         definition.name for definition in ordered_definitions
     )
 
+    context_defs = tuple(site_context_definitions)
+    context_names = tuple(d.name for d in context_defs)
+    values_by_context = []
+    masks_by_context = []
+    metadata_by_context = []
     values_by_time = []
     mask_by_time = []
     metadata_by_time = []
 
     for frame in frames:
+        if "WEATHER-API" in frame.values:
+            raise ValueError("WEATHER-API cannot be node-local data")
+        context = frame.site_context or {}
+        unknown_context = set(context) - set(context_names)
+        if unknown_context:
+            raise ValueError(f"undeclared site context features: {sorted(unknown_context)}")
+        if any(key not in ordered_devices for key in frame.values):
+            raise ValueError("undeclared device in node frame")
+        context_cells = tuple(context.get(name, FeatureCell(None, MISSING_METADATA))
+                              for name in context_names)
+        values_by_context.append(tuple(cell.value for cell in context_cells))
+        masks_by_context.append(tuple(cell.available for cell in context_cells))
+        metadata_by_context.append(tuple(cell.metadata for cell in context_cells))
         timestep_values = []
         timestep_mask = []
         timestep_metadata = []
@@ -182,4 +202,8 @@ def build_temporal_graph_sample(
         adjacency_method=adjacency_method,
         adjacency_provenance=adjacency_provenance,
         target=target,
+        site_context_definitions=context_defs,
+        site_context_values=tuple(values_by_context) if context_defs else (),
+        site_context_mask=tuple(masks_by_context) if context_defs else (),
+        site_context_metadata=tuple(metadata_by_context) if context_defs else (),
     )

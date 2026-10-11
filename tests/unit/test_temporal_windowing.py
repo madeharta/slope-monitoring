@@ -240,3 +240,68 @@ def test_out_of_order_window_is_rejected():
             end_index=1,
             window_length=2,
         )
+
+
+def test_site_weather_is_separate_from_node_tensor():
+    t0 = datetime(2026, 10, 11, tzinfo=UTC)
+    external = FeatureMetadata(
+        source_kind=MLSourceKind.EXTERNAL,
+        validation_status=MLValidationStatus.NOT_APPLICABLE,
+        source_file="Open-Meteo",
+    )
+    frames = (
+        AlignedFeatureFrame(t0, {"ROVER-B1-01": {"ppa_g": FeatureCell(0.0, _meta())}},
+                            {"rainfall_24h_external": FeatureCell(12.0, external)}),
+        AlignedFeatureFrame(t0 + timedelta(minutes=5), {"ROVER-B1-01": {}}, {}),
+    )
+    sample = build_temporal_graph_sample(
+        site_id="ITB-STAGING-01", device_ids=("ROVER-B1-01",),
+        feature_definitions=(FeatureDefinition("ppa_g", "g"),),
+        site_context_definitions=(FeatureDefinition("rainfall_24h_external", "mm"),),
+        frames=frames, adjacency=((0.0,),), adjacency_method="fixed",
+        adjacency_provenance="test", target=_target(frames[-1].timestamp_utc),
+    )
+    assert sample.device_ids == ("ROVER-B1-01",)
+    assert sample.feature_values == (((0.0,),), ((None,),))
+    assert sample.site_context_values == ((12.0,), (None,))
+    assert sample.site_context_mask == ((True,), (False,))
+    assert sample.site_context_metadata[0][0].source_file == "Open-Meteo"
+    dense, mask = sample.dense_site_context()
+    assert dense == ((12.0,), (0.0,)) and mask == ((True,), (False,))
+
+
+def test_weather_api_cannot_be_fabricated_as_node():
+    t0 = datetime(2026, 10, 11, tzinfo=UTC)
+    with pytest.raises(ValueError, match="WEATHER-API"):
+        build_temporal_graph_sample(
+            site_id="S", device_ids=("WEATHER-API",),
+            feature_definitions=(FeatureDefinition("rain", "mm"),),
+            frames=(AlignedFeatureFrame(t0, {"WEATHER-API": {}}),),
+            adjacency=((0.0,),), adjacency_method="fixed",
+            adjacency_provenance="test", target=_target(t0),
+        )
+
+
+def test_undeclared_site_context_is_rejected():
+    t0 = datetime(2026, 10, 11, tzinfo=UTC)
+    with pytest.raises(ValueError, match="undeclared site context"):
+        build_temporal_graph_sample(
+            site_id="S", device_ids=("ROVER-B1-01",),
+            feature_definitions=(FeatureDefinition("ppa", "g"),),
+            frames=(AlignedFeatureFrame(t0, {}, {"rain": FeatureCell(0.0, _meta(MLSourceKind.EXTERNAL))}),),
+            adjacency=((0.0,),), adjacency_method="fixed",
+            adjacency_provenance="test", target=_target(t0),
+        )
+
+
+def test_non_external_provenance_rejected_in_site_context():
+    t0 = datetime(2026, 10, 11, tzinfo=UTC)
+    with pytest.raises(ValueError, match="external provenance"):
+        build_temporal_graph_sample(
+            site_id="S", device_ids=("ROVER-B1-01",),
+            feature_definitions=(FeatureDefinition("ppa", "g"),),
+            site_context_definitions=(FeatureDefinition("rain", "mm"),),
+            frames=(AlignedFeatureFrame(t0, {}, {"rain": FeatureCell(1.0, _meta())}),),
+            adjacency=((0.0,),), adjacency_method="fixed",
+            adjacency_provenance="test", target=_target(t0),
+        )

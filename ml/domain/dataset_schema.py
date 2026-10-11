@@ -216,6 +216,12 @@ class TemporalGraphSample:
     adjacency_provenance: str
     target: RegressionTarget
 
+    # Optional site-wide covariates. Legacy node-only constructors remain valid.
+    site_context_definitions: tuple[FeatureDefinition, ...] = ()
+    site_context_values: tuple[tuple[Optional[float], ...], ...] = ()
+    site_context_mask: tuple[tuple[bool, ...], ...] = ()
+    site_context_metadata: tuple[tuple[FeatureMetadata, ...], ...] = ()
+
     def __post_init__(self) -> None:
         if self.schema_version != DATASET_SCHEMA_VERSION:
             raise ValueError(
@@ -232,6 +238,9 @@ class TemporalGraphSample:
 
         if not self.feature_definitions:
             raise ValueError("feature_definitions must not be empty")
+
+        if any(device.upper() == "WEATHER-API" for device in self.device_ids):
+            raise ValueError("WEATHER-API is site context, not a graph node")
 
         names = tuple(f.name for f in self.feature_definitions)
         if len(set(names)) != len(names):
@@ -308,6 +317,8 @@ class TemporalGraphSample:
                                 "missing feature must use missing metadata"
                             )
 
+        self._validate_site_context(t_count)
+
         if len(self.adjacency) != n_count:
             raise ValueError("adjacency must have N rows")
 
@@ -352,6 +363,48 @@ class TemporalGraphSample:
             raise ValueError(
                 "target horizon does not match target timestamp - window end"
             )
+
+    def _validate_site_context(self, t_count: int) -> None:
+        c_count = len(self.site_context_definitions)
+        names = tuple(d.name for d in self.site_context_definitions)
+        if len(names) != len(set(names)):
+            raise ValueError("site context feature names must be unique")
+        if not c_count and not any((
+            self.site_context_values, self.site_context_mask,
+            self.site_context_metadata,
+        )):
+            return  # Backward-compatible node-only sample.
+        for field_name, matrix in (
+            ("site_context_values", self.site_context_values),
+            ("site_context_mask", self.site_context_mask),
+            ("site_context_metadata", self.site_context_metadata),
+        ):
+            if len(matrix) != t_count or any(len(row) != c_count for row in matrix):
+                raise ValueError(f"{field_name} must have shape [T][C]")
+        for values, masks, metas in zip(
+            self.site_context_values, self.site_context_mask,
+            self.site_context_metadata,
+        ):
+            for value, available, meta in zip(values, masks, metas):
+                if type(available) is not bool or not isinstance(meta, FeatureMetadata):
+                    raise ValueError("invalid site context mask or metadata")
+                if available:
+                    if value is None:
+                        raise ValueError("available site context requires numeric value")
+                    require_finite(value, "site context value")
+                    if meta.source_kind is not MLSourceKind.EXTERNAL:
+                        raise ValueError("site context requires external provenance")
+                elif value is not None or meta.source_kind is not MLSourceKind.MISSING:
+                    raise ValueError("missing site context requires None and missing metadata")
+
+    def dense_site_context(self, *, fill_value: float = 0.0):
+        """Return dense site context and its mandatory availability mask."""
+        require_finite(fill_value, "fill_value")
+        return (
+            tuple(tuple(v if m else fill_value for v, m in zip(row, mask))
+                  for row, mask in zip(self.site_context_values, self.site_context_mask)),
+            self.site_context_mask,
+        )
 
     @staticmethod
     def _validate_3d_shape(
