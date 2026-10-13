@@ -46,12 +46,13 @@ async def lifespan(app: FastAPI):
     weather_task = None
     if os.getenv("WEATHER_POLLING_ENABLED", "false").lower() == "true":
         weather_task = asyncio.create_task(weather.weather_poll_loop(app.state.db_pool))
-    measurements_retention_days = int(os.getenv("MEASUREMENTS_RETENTION_DAYS", "730"))
-    async with app.state.db_pool.acquire() as conn:
-        await conn.execute(
-            "SELECT add_retention_policy('measurements', make_interval(days => $1), if_not_exists => TRUE)",
-            measurements_retention_days,
-        )
+    if os.getenv("RETENTION_POLICY_MANAGEMENT_ENABLED", "true").strip().lower() == "true":
+        measurements_retention_days = int(os.getenv("MEASUREMENTS_RETENTION_DAYS", "730"))
+        async with app.state.db_pool.acquire() as conn:
+            await conn.execute(
+                "SELECT add_retention_policy('measurements', make_interval(days => $1), if_not_exists => TRUE)",
+                measurements_retention_days,
+            )
     yield
     if weather_task is not None:
         weather_task.cancel()
