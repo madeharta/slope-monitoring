@@ -270,7 +270,7 @@ export default function SlopeDetail() {
           hours,
           fromIso,
           toIso,
-          { signal: controller.signal },
+          { signal: controller.signal, authFetch },
         );
 
         if (!alive) return;
@@ -318,7 +318,7 @@ export default function SlopeDetail() {
         controller = null;
       }
     };
-  }, [id, hours, customFrom, customTo]);
+  }, [id, hours, customFrom, customTo, authFetch]);
 
   const name = overview?.slopes.find((s) => s.site_id === id)?.name || id;
   const site = overview?.slopes.find((s) => s.site_id === id);

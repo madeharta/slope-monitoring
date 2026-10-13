@@ -76,11 +76,11 @@ export default function Overview() {
 
   useEffect(() => {
     let alive = true;
-    const load = () => getOverview().then((o) => alive && setOverview(o)).catch(() => {});
+    const load = () => getOverview(authFetch).then((o) => alive && setOverview(o)).catch(() => {});
     load();
     const t = setInterval(load, 8000);
     return () => { alive = false; clearInterval(t); };
-  }, [setOverview]);
+  }, [setOverview, authFetch]);
 
   // Auto-fetch weather (2026-09-20, per permintaan) — sebelumnya perlu
   // curl manual atau menunggu polling background (yang defaultnya mati).
