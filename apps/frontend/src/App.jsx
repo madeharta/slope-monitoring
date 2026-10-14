@@ -21,9 +21,12 @@ import RequireAuth from "./context/RequireAuth.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 function AuthenticatedApp() {
   const connect = useStore((s) => s.connect);
+  const disconnect = useStore((s) => s.disconnect);
+  const { authFetch } = useAuth();
   useEffect(() => {
-    connect();
-  }, [connect]);
+    connect(authFetch);
+    return () => disconnect();
+  }, [connect, disconnect, authFetch]);
   return (
     <div className="app">
       <div className="stage">

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { getOverview } from "../api";
@@ -72,7 +72,6 @@ export default function Overview() {
   const pal = getPalette(variant);
   const { authFetch } = useAuth();
   const [warnOpen, setWarnOpen] = useState(true);
-  const weatherFetchedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -82,22 +81,8 @@ export default function Overview() {
     return () => { alive = false; clearInterval(t); };
   }, [setOverview, authFetch]);
 
-  // Auto-fetch weather (2026-09-20, per permintaan) — sebelumnya perlu
-  // curl manual atau menunggu polling background (yang defaultnya mati).
-  // Dipicu SEKALI per site saat halaman pertama kali dapat daftar site,
-  // bukan tiap 8s poll (supaya tidak membombardir Open-Meteo). Gagal
-  // (mis. role viewer tidak punya izin operator ke endpoint ini) dibiarkan
-  // diam — widget weather baru tidak tampil sampai data tersedia,
-  // bukan error yang mengganggu pengguna.
-  useEffect(() => {
-    if (weatherFetchedRef.current || !overview?.slopes?.length) return;
-    weatherFetchedRef.current = true;
-    overview.slopes.forEach((s) => {
-      authFetch(`/api/v1/weather/fetch/${encodeURIComponent(s.site_id)}`, { method: "POST" })
-        .catch((err) => console.debug("weather auto-fetch skipped for", s.site_id, err));
-    });
-  }, [overview, authFetch]);
-
+  // Weather is read-only on page load. POST /weather/fetch writes measurements
+  // and requires operator authorization; it must never run implicitly on Overview.
   const slopes = overview?.slopes || [];
   const c = overview?.status_counts || { normal: 0, siaga: 0, bahaya: 0, unknown: 0 };
   const health = overview?.health || { online: 0, offline: 0, total: 0 };
