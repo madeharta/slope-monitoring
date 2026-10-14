@@ -54,9 +54,10 @@ export default function TopBar() {
   const items = [
     { key: "map", label: "Overview", icon: I.dash, onClick: () => { nav("/"); setNav("map"); } },
     { key: "analytics", label: "Analytics", icon: I.chart, onClick: () => { nav("/sensors"); setNav("analytics"); } },
-    { key: "ppk", label: "PPK", icon: I.satellite, onClick: () => { nav("/ppk"); setNav("ppk"); } },
     { key: "blast", label: "Blast", icon: I.bell, onClick: () => { nav("/blast"); setNav("blast"); } },
     { key: "alarms", label: "Alarms", icon: I.bell, onClick: () => setNav("alarms") },
+    { key: "uploads", label: "Uploads", icon: I.map, onClick: () => nav("/uploads") },
+    { key: "devices", label: "Devices", icon: I.dash, onClick: () => nav("/devices") },
   ];
 
   useEffect(() => {
@@ -126,7 +127,7 @@ export default function TopBar() {
         <div className="search"><span className="ic" aria-hidden>⌕</span>
           <input type="text" placeholder="Search slope / device…" aria-label="Search" />
         </div>
-        <span className={"live" + (connected ? "" : " off")}><span className="dot" />{connected ? "Live" : "Offline"}</span>
+        <span className={"live" + (connected ? "" : " off")} title="SSE transport status, not proof of live sensor ingestion"><span className="dot" />{connected ? "Stream linked" : "Stream offline"}</span>
         <span className="clock">{wibClock(clock)}</span>
         <button className="variant-toggle" onClick={toggleVariant} title="Toggle theme (Vibrant / ISA-101 mono)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" /></svg>

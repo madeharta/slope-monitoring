@@ -81,8 +81,7 @@ export default function Overview() {
     return () => { alive = false; clearInterval(t); };
   }, [setOverview, authFetch]);
 
-  // Weather is read-only on page load. POST /weather/fetch writes measurements
-  // and requires operator authorization; it must never run implicitly on Overview.
+  // Weather refresh is owned by backend's 15-minute worker; Overview is read-only.
   const slopes = overview?.slopes || [];
   const c = overview?.status_counts || { normal: 0, siaga: 0, bahaya: 0, unknown: 0 };
   const health = overview?.health || { online: 0, offline: 0, total: 0 };
@@ -105,54 +104,78 @@ export default function Overview() {
   const peakDisp = dispArr.length ? Math.round(Math.max(...dispArr)) : "—";
   const total = slopes.length || 1;
 
-  // External weather (Open-Meteo, 2026-09-19) — DELIBERATELY separate
-  // quantity names from the ground-sensor `rainfall`/`soil_moisture`
-  // above (see services/weather_service — quantities are suffixed
-  // `_external`), so this never mixes with or overwrites physical sensor
-  // readings on the same chart. Flows through the same SSE `/api/stream`
-  // as everything else (measurements-table-wide), no separate polling.
-  const rainBySite = latestBySite(recent, "rainfall_external");
-  const rain24hBySite = latestBySite(recent, "rainfall_24h_external");
-  const tempBySite = latestBySite(recent, "temperature_external");
-  const humidBySite = latestBySite(recent, "humidity_external");
-  const allWeatherSiteIds = [...new Set([...Object.keys(rainBySite), ...Object.keys(tempBySite), ...Object.keys(humidBySite)])];
+  // BATCH11G_DB_WEATHER_V2: last persisted weather per site is authoritative.
+  // Read-only authenticated GET, no telemetry lookback limit and no browser cache.
+  const [persistedWeather, setPersistedWeather] = useState({});
+  const [weatherLoaded, setWeatherLoaded] = useState(false);
+  const [weatherError, setWeatherError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    async function loadWeather() {
+      try {
+        const response = await authFetch("/api/v1/weather/latest");
+        if (!response.ok) throw new Error(`Weather API HTTP ${response.status}`);
+        const payload = await response.json();
+        if (!payload || payload.ok !== true || !payload.sites || typeof payload.sites !== "object" || Array.isArray(payload.sites)) {
+          throw new Error("Invalid latest weather response");
+        }
+        if (alive) {
+          setPersistedWeather(payload.sites);
+          setWeatherLoaded(true);
+          setWeatherError(false);
+        }
+      } catch (error) {
+        // Do not erase an earlier successful snapshot on transient errors.
+        if (alive) { setWeatherLoaded(true); setWeatherError(true); }
+      }
+    }
+    loadWeather();
+    const timer = setInterval(loadWeather, 60000); // UI GET refresh; not Open-Meteo polling.
+    return () => { alive = false; clearInterval(timer); };
+  }, [authFetch]);
 
-  // FIX (2026-09-20): dulu SEMUA site dengan data cuaca ditampilkan di
-  // Overview — sekarang dibatasi maks 2, yang PALING DEKAT dengan lokasi
-  // browser pengguna (Geolocation API). Sisanya tetap ada datanya, cuma
-  // dipindah ke halaman detail lereng masing-masing (SlopeDetail.jsx),
-  // bukan dihilangkan.
   const [userPos, setUserPos] = useState(null);
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => setUserPos({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      () => setUserPos(null), // ditolak/gagal -> diam saja, fallback ke urutan apa adanya di bawah
+      () => setUserPos(null),
       { timeout: 5000 }
     );
   }, []);
-
   const siteById = Object.fromEntries(slopes.map((s) => [s.site_id, s]));
-  const weatherSites = [...allWeatherSiteIds]
-    .filter((id) => siteById[id]) // buang site_id yang entah kenapa tidak ada di daftar slopes
-    .sort((a, b) => {
-      if (!userPos) return 0; // geolocation ditolak/belum ada -> urutan apa adanya, tidak dipaksa
-      const da = haversineKm(userPos.lat, userPos.lon, siteById[a].lat, siteById[a].lon);
-      const db = haversineKm(userPos.lat, userPos.lon, siteById[b].lat, siteById[b].lon);
-      return da - db;
-    })
-    .slice(0, 2);
+  const weatherSiteIds = Object.keys(persistedWeather).filter((id) => siteById[id]);
+  const weatherSites = weatherSiteIds.sort((a, b) => {
+    if (!userPos) return 0;
+    const sa = siteById[a], sb = siteById[b];
+    return haversineKm(userPos.lat, userPos.lon, sa.lat, sa.lon) - haversineKm(userPos.lat, userPos.lon, sb.lat, sb.lon);
+  }).slice(0, 2);
+  const weatherObservedAt = (value) => {
+    if (!value) return "Waktu observasi tidak tersedia";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? "Waktu observasi tidak valid" : parsed.toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" }) + " WIB";
+  };
+  const weatherAgeLabel = (value) => {
+    const t = Date.parse(value || "");
+    if (!Number.isFinite(t)) return "HISTORICAL · waktu tidak diketahui";
+    const age = Date.now() - t;
+    return age >= 0 && age <= 30 * 60 * 1000 ? "LAST OBSERVED" : "HISTORICAL / STALE";
+  };
+  // Weather display only: keep raw backend/database precision unchanged.
+  const wxNumber = (value, digits = 1) => {
+    if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return "—";
+    const rounded = Number(Number(value).toFixed(digits));
+    return new Intl.NumberFormat("id-ID", { maximumFractionDigits: digits }).format(rounded);
+  };
 
   return (
     <>
-      <div role="status" style={{position:"fixed",top:64,left:16,zIndex:1000,background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43",borderRadius:6,maxWidth:510,fontSize:12}}>
-        UNVALIDATED — Siaga/Bahaya adalah severity teknis untuk QA/riset. Alarm dan instruksi operasional disuppress sampai field, PPK, dan baseline acceptance disetujui.
-      </div>
       <div className="mapwrap"><SiteMap slopes={slopes} devices={devices} /></div>
       <div className="scrim" />
 
       {/* LEFT — editorial headline + active-alarm cards, floating over the map */}
       <div className="ov-left">
+        <div className="ov-validation" role="status"><strong>RESEARCH · UNVALIDATED</strong> — Alarm operasional dan instruksi tindakan belum aktif sampai validasi lapangan, PPK, dan baseline disetujui.</div>
         <div className="ov-eyebrow">ALL SLOPES <span>({slopes.length})</span></div>
         <button className="ov-title" onClick={() => setWarnOpen((o) => !o)} aria-expanded={warnOpen}>
           Operational alerts <span className="ov-count">({warnings})</span>
@@ -189,7 +212,7 @@ export default function Overview() {
           </svg>
           <span className="wx-t">
             <span className="wx-v">{peakDisp} <i>mm</i></span>
-            <span className="wx-k">Peak displacement · live</span>
+            <span className="wx-k">Displacement · research only</span>
           </span>
         </div>
         <span className="vdiv" />
@@ -207,7 +230,7 @@ export default function Overview() {
           <div className="wcard-b"><Spark data={dispArr} c={pal.spark} area /></div>
         </div>
         <div className="wcard">
-          <div className="wcard-h"><h3>Vibration (PPV) live</h3><span className="wgic">⋯</span></div>
+          <div className="wcard-h"><h3>Vibration (PPV) · observations</h3><span className="wgic">⋯</span></div>
           <div className="wcard-b"><Spark data={vibArr} c={pal.spark} area={pal.area} /></div>
         </div>
         <div className="wcard ppk-overview-card">
@@ -234,35 +257,44 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* External weather (Open-Meteo) — 2026-09-20 revisi: sekarang
-            per-site secara eksplisit (dulu semua site digabung jadi satu
-            angka tanpa penanda lokasi — ambigu begitu >1 site punya
-            data). Cuma render kalau ada site dengan data. */}
-        {weatherSites.length > 0 && (
-          <div className="wcard">
-            <div className="wcard-h"><h3>External weather</h3><span className="wgic" title="Open-Meteo, bukan sensor lapangan">ⓘ</span></div>
-            <div className="wcard-b wx-ext">
-              {weatherSites.map((siteId) => (
+        {/* External weather: latest persisted PostgreSQL observation per site. */}
+        <div className="wcard">
+          <div className="wcard-h"><h3>External weather</h3><span className="wgic" title="Open-Meteo; bukan sensor lapangan">ⓘ</span></div>
+          <div className="wcard-b wx-ext">
+            {weatherSites.length === 0 && (
+              <div className="wx-ext-site">
+                <div className="wx-ext-site-name">Observasi terakhir</div>
+                <div className="wx-ext-row"><span>Rainfall</span><b>—</b></div>
+                <div className="wx-ext-row"><span>24h rainfall</span><b>—</b></div>
+                <div className="wx-ext-row"><span>Temperature</span><b>—</b></div>
+                <div className="wx-ext-row"><span>Humidity</span><b>—</b></div>
+                <div className="wx-ext-stale">{weatherError ? "Data cuaca gagal dimuat dari API." : weatherLoaded ? "Belum ada data cuaca tersimpan untuk site ini." : "Memuat data cuaca tersimpan…"}</div>
+              </div>
+            )}
+            {weatherSites.map((siteId) => {
+              const wx = persistedWeather[siteId];
+              return (
                 <div key={siteId} className="wx-ext-site">
                   <div className="wx-ext-site-name">
                     {siteById[siteId]?.name || siteId}
-                    {userPos && <span className="wx-ext-dist"> · {haversineKm(userPos.lat, userPos.lon, siteById[siteId].lat, siteById[siteId].lon).toFixed(1)} km dari Anda</span>}
+                    {userPos && Number.isFinite(Number(siteById[siteId]?.lat)) && Number.isFinite(Number(siteById[siteId]?.lon)) && (
+                      <span className="wx-ext-dist"> · {haversineKm(userPos.lat, userPos.lon, siteById[siteId].lat, siteById[siteId].lon).toFixed(1)} km dari Anda</span>
+                    )}
                   </div>
-                  <div className="wx-ext-row"><span>Rainfall</span><b>{rainBySite[siteId] ?? "—"} mm</b></div>
-                  <div className="wx-ext-row"><span>24h rainfall</span><b>{rain24hBySite[siteId] ?? "—"} mm</b></div>
-                  <div className="wx-ext-row"><span>Temperature</span><b>{tempBySite[siteId] ?? "—"} °C</b></div>
-                  <div className="wx-ext-row"><span>Humidity</span><b>{humidBySite[siteId] ?? "—"} %</b></div>
+                  <div className="wx-ext-stale">{weatherAgeLabel(wx.observed_at)} · {weatherObservedAt(wx.observed_at)}{weatherError ? " · OFFLINE (last received)" : ""}</div>
+                  <div className="wx-ext-row"><span>Rainfall</span><b>{wxNumber(wx.rainfall_mm)} mm</b></div>
+                  <div className="wx-ext-row"><span>24h rainfall</span><b>{wxNumber(wx.rainfall_24h_mm)} mm</b></div>
+                  <div className="wx-ext-row"><span>Temperature</span><b>{wxNumber(wx.temperature_c)} °C</b></div>
+                  <div className="wx-ext-row"><span>Humidity</span><b>{wxNumber(wx.humidity_pct)} %</b></div>
                 </div>
-              ))}
-              <div className="wx-ext-attr">Weather data by Open-Meteo.com (CC BY 4.0)</div>
-              {allWeatherSiteIds.length > weatherSites.length && (
-                <div className="wx-ext-more">
-                  +{allWeatherSiteIds.length - weatherSites.length} site lain punya data cuaca — lihat di halaman detail lereng masing-masing.
-                </div>
-              )}
-            </div>
+              );
+            })}
+            <div className="wx-ext-attr">Open-Meteo · observasi terakhir dari database; API diperiksa setiap 60 detik. Data lama bukan kondisi live.</div>
+            {weatherSiteIds.length > weatherSites.length && (
+              <div className="wx-ext-more">+{weatherSiteIds.length - weatherSites.length} site lain punya data cuaca — lihat detail lereng.</div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </>
   );
