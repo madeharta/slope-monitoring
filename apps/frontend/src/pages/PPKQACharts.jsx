@@ -34,12 +34,15 @@ function Scatter({rows,field,label,color='#157d99'}) {
 }
 export default function PPKQACharts({siteId,roverId,timeRange,limit,revision}){
  const {authFetch}=useAuth();
- const [rows,setRows]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
- useEffect(()=>{let alive=true;setLoading(true);setError('');setRows(null);
+ const [rows,setRows]=useState(null),[availability,setAvailability]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+ useEffect(()=>{let alive=true;setLoading(true);setError('');setRows(null);setAvailability(null);
   authFetch(`/api/v1/ppk/qa/solutions?${new URLSearchParams({site_id:siteId, ...(roverId?{rover_device_id:roverId}:{}),time_range:timeRange,limit:String(limit)})}`)
    .then(async resp=>{const body=await resp.json();if(!resp.ok)throw Error(body.detail||`HTTP ${resp.status}`);
      if(body.applied_filters?.site_id!==siteId||body.applied_filters?.rover_device_id!==(roverId||null)||body.applied_filters?.time_range!==timeRange||body.applied_filters?.limit!==limit)throw Error('Filter response mismatch');
      if(body.scope!=='EXPERIMENTAL_ENGINE_QA_ONLY'||body.schema_version!=='ppk.qa.solution.v1'||body.reference_type!=='PROVISIONAL_SPP'||body.validation_status!=='unvalidated'||body.operational_displacement_approved!==false||!Array.isArray(body.rows))throw Error('QA response contract mismatch');
+     if(!['available','schema_unavailable'].includes(body.availability_status))throw Error('QA availability status missing');
+     if(body.availability_status==='schema_unavailable'&&body.rows.length!==0)throw Error('QA schema status inconsistent');
+     if(alive)setAvailability(body.availability_status);
      const converted=body.rows.map(r=>({...r,epoch:Number(r.gps_week)*604800+Number(r.gps_tow_s)}));
      if(converted.length>2000||converted.some((r,i)=>!Number.isFinite(r.epoch)||!Number.isFinite(r.latitude_deg)||!Number.isFinite(r.longitude_deg)||!Number.isFinite(r.ellipsoidal_height_m)||!Number.isFinite(r.sdn_m)||!Number.isFinite(r.sde_m)||!Number.isFinite(r.sdu_m)||![1,2,5].includes(r.rtklib_quality)||(i>0&&r.epoch<=converted[i-1].epoch)))throw Error('Malformed QA epoch data');
      if(alive)setRows(converted);
@@ -51,7 +54,8 @@ export default function PPKQACharts({siteId,roverId,timeRange,limit,revision}){
    <div className="ppk-card-head"><div><h2>Experimental PPK engine QA — auto-loaded from QA API</h2><span>Source: persisted experimental QA only · BASE provisional SPP · unvalidated · bukan displacement</span></div></div>
    <p className="ppk-qa-hint">Applied: {siteId} · {roverId||'All QA rovers'} · {timeRange==='all'?'All available':timeRange} · limit {limit}. Times in GPST (UTC = GPST − 18 s for this session).</p>
    {error && <p role="alert">QA API: {error}</p>}
-   {loading && <p className="ppk-qa-hint">Memuat hasil QA dari API…</p>}{!loading && !error && (!rows || rows.length===0) && <p className="ppk-qa-hint">Tidak ada hasil PPK QA untuk Site, Rover, dan Time Range terpilih.</p>}
+   {!loading && !error && availability==='schema_unavailable' && <p role="status" className="ppk-qa-hint">Experimental PPK QA belum tersedia: tabel QA belum dipasang pada database lingkungan ini. Ini bukan hasil pengukuran kosong. Status tetap PROVISIONAL_SPP / unvalidated; tidak ada displacement operasional.</p>}
+   {loading && <p className="ppk-qa-hint">Memuat hasil QA dari API…</p>}{!loading && !error && availability==='available' && (!rows || rows.length===0) && <p className="ppk-qa-hint">Tidak ada hasil PPK QA untuk Site, Rover, dan Time Range terpilih.</p>}
    {rows && rows.length>0 && <>
       <p className="ppk-qa-hint">{rows.length} epoch · API persisted · reference_type=PROVISIONAL_SPP · validation_status=unvalidated</p>
       <div className="ppk-qa-counts">{[1,2,5].map(q=><div key={q}><span>{LABELS[q]}</span><strong>{counts[q]||0}</strong></div>)}</div>
