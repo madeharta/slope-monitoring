@@ -12,6 +12,8 @@ import {
   ITB_REFERENCE_WAVEFORMS,
 } from "../data/sensorReferenceData.js";
 import "./sensors.css";
+import GnssSynchronizationQA from "./GnssSynchronizationQA.jsx";
+import SatelliteQualityQA from "./SatelliteQualityQA.jsx";
 
 const SOURCE_ACTUAL = "actual";
 const SOURCE_REFERENCE = "reference";
@@ -223,7 +225,7 @@ function gnssStats(rows) {
   return {
     first: ordered[0],
     latest: ordered.at(-1),
-    medianHAcc: median(ordered.map((r) => Number(r.h_acc_m))),
+    medianHAcc: median(ordered.map((r) => r.h_acc_m == null || r.h_acc_m === "" ? NaN : Number(r.h_acc_m))),
     medianGapMs: median(diffs),
     maxGapMs: diffs.length ? Math.max(...diffs) : null,
     spanMs: new Date(ordered.at(-1).timestamp_utc) - new Date(ordered[0].timestamp_utc),
@@ -266,6 +268,8 @@ export default function SensorMonitoring() {
   const [draft, setDraft] = useState(() => sourceDefaults(SOURCE_ACTUAL));
   const [applied, setApplied] = useState(() => sourceDefaults(SOURCE_ACTUAL));
   const [rawGnss, setRawGnss] = useState([]);
+  /* BATCH12_RAWX_OBSERVATIONS_V1 */
+  const [rawxSummary, setRawxSummary] = useState(null);
   const [gnssWindow, setGnssWindow] = useState(null);
   const [rawEvents, setRawEvents] = useState([]);
   const [eventFile, setEventFile] = useState("");
@@ -406,6 +410,7 @@ export default function SensorMonitoring() {
     setWave([]);
     setWaveMeta(null);
     setGnssWindow(null);
+    setRawxSummary(null);
     setEventFile("");
 
     try {
@@ -418,6 +423,17 @@ export default function SensorMonitoring() {
         const requests = [];
 
         if (wantsGnss) {
+          // RAWX presence is independent of PPK position availability.
+          const rawxParams = new URLSearchParams({ site_id: next.siteId });
+          const rawxWindow = actualApiWindow(next);
+          if (rawxWindow.from) rawxParams.set("from", rawxWindow.from);
+          if (rawxWindow.to) rawxParams.set("to", rawxWindow.to);
+          requests.push(authFetch(`/api/v1/sensors/gnss/rawx/availability?${rawxParams}`)
+            .then(async (r) => {
+              const b = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(b.detail || `RAWX HTTP ${r.status}`);
+              setRawxSummary(b);
+            }));
           const params = new URLSearchParams({
             site_id: next.siteId,
             device_id: next.deviceId,
@@ -569,48 +585,12 @@ export default function SensorMonitoring() {
         </div>
       </div>
 
-      <section className="panel sensor-v2-source">
+      <section className="panel sensor-v2-source" style={{ padding: "12px 16px", minHeight: 0, marginBottom: 12 }}>
         <div>
-          <span className="sensor-v2-eyebrow">Data source</span>
-          <h2>Monitoring dataset</h2>
-          <p>{sourceNote}</p>
+          <span className="sensor-v2-eyebrow">DATA SOURCE</span>
+          <h2>Actual persisted measurements</h2>
+          <small>Verified GNSS RAWX / persisted acceleration · experimental, not operational displacement</small>
         </div>
-
-        <div className="sensor-v2-source-switch" role="group" aria-label="Data source">
-          <button
-            className={draft.source === SOURCE_ACTUAL ? "on" : ""}
-            onClick={() => chooseSource(SOURCE_ACTUAL)}
-            type="button"
-          >
-            Actual
-          </button>
-          <button
-            className={draft.source === SOURCE_REFERENCE ? "on" : ""}
-            onClick={() => chooseSource(SOURCE_REFERENCE)}
-            type="button"
-          >
-            ITB Reference
-          </button>
-          <button
-            className={draft.source === SOURCE_SYNTHETIC ? "on" : ""}
-            onClick={() => chooseSource(SOURCE_SYNTHETIC)}
-            type="button"
-          >
-            Synthetic
-          </button>
-        </div>
-
-        {draft.source === SOURCE_REFERENCE && (
-          <div className="sensor-v2-source-banner is-reference">
-            REAL ITB REFERENCE SAMPLE — NOT LIVE OPERATIONAL TELEMETRY
-          </div>
-        )}
-
-        {draft.source === SOURCE_SYNTHETIC && (
-          <div className="sensor-v2-source-banner is-synthetic">
-            SYNTHETIC DEMO DATA — NOT FIELD MEASUREMENT
-          </div>
-        )}
       </section>
 
       <section className="panel sensor-v2-filter">
@@ -687,6 +667,8 @@ export default function SensorMonitoring() {
             </select>
           </label>
 
+          {/* B12_FINAL_FILTER_CLEANUP */}
+          {(fixOptions.length > 0 || draft.fixType !== "all") && (
           <label>
             <span>GNSS fix</span>
             <select value={draft.fixType} onChange={(e) => setDraftField("fixType", e.target.value)}>
@@ -694,7 +676,10 @@ export default function SensorMonitoring() {
               {fixOptions.map((v) => <option key={v} value={v}>Fix {v}</option>)}
             </select>
           </label>
+          )}
 
+          {/* B12_FINAL_FILTER_CLEANUP */}
+          {(validationOptions.length > 0 || draft.validation !== "all") && (
           <label>
             <span>Validation</span>
             <select value={draft.validation} onChange={(e) => setDraftField("validation", e.target.value)}>
@@ -702,7 +687,10 @@ export default function SensorMonitoring() {
               {validationOptions.map((v) => <option key={v}>{v}</option>)}
             </select>
           </label>
+          )}
 
+          {/* B12_FINAL_FILTER_CLEANUP */}
+          {(qualityOptions.length > 0 || draft.quality !== "all") && (
           <label>
             <span>Quality</span>
             <select value={draft.quality} onChange={(e) => setDraftField("quality", e.target.value)}>
@@ -710,6 +698,7 @@ export default function SensorMonitoring() {
               {qualityOptions.map((v) => <option key={v}>{v}</option>)}
             </select>
           </label>
+          )}
 
           {draft.range === "custom" && (
             <>
@@ -734,16 +723,13 @@ export default function SensorMonitoring() {
             {busy ? "Applying…" : "Apply filters"}
           </button>
           <button className="admin-btn" disabled={busy} onClick={resetFilters}>Reset</button>
-          <span>
-            No auto-refresh. Filter changes remain draft until Apply.
-            {applied.source === SOURCE_ACTUAL && " Actual GNSS uses server-side historical from/to windows with ≤5000 display points; continuity metrics remain raw-window server summaries. Accel events remain latest ≤50."}
-          </span>
+          <span>Filters apply on click · Times follow the selected window</span>
         </div>
       </section>
 
       {error && <div className="admin-error sensor-error">{error}</div>}
 
-      <div className="sensor-v2-kpis">
+      {gnss.length > 0 && <div className="sensor-v2-kpis">
         <div>
           <span>GNSS rows</span>
           <strong>{continuity.totalRows.toLocaleString()}</strong>
@@ -774,9 +760,9 @@ export default function SensorMonitoring() {
           <strong>{fmtMaybe(continuity.maxGapMs, " ms", 0)}</strong>
           <small>no interpolation applied</small>
         </div>
-      </div>
+      </div>}
 
-      {applied.source === SOURCE_ACTUAL && gnssWindow && (
+      {applied.source === SOURCE_ACTUAL && gnss.length > 0 && gnssWindow && (
         <section className="panel sensor-v2-gnss-transport">
           <div className="sensor-v2-section-head">
             <div>
@@ -811,7 +797,88 @@ export default function SensorMonitoring() {
         </section>
       )}
 
-      <section className="panel sensor-v2-quality">
+      {applied.source === SOURCE_ACTUAL && applied.dataType !== "accel" && Array.isArray(rawxSummary?.devices) && rawxSummary.devices.length > 0 && (() => {
+        // The availability v3 API returns points (not files/buckets). A bucket only
+        // represents actual observation coverage when its count is positive.
+        const rows = Array.isArray(rawxSummary.points) ? rawxSummary.points : [];
+        const countOf = (p) => {
+          const value = p.epochs ?? p.epoch_count ?? p.observation_count ?? p.observations ?? p.count ?? p.sample_count;
+          if (value == null || value === "") return null;
+          const n = Number(value);
+          return Number.isFinite(n) ? n : null;
+        };
+        const valid = rows.filter((p) => p.device_id && Number.isFinite(Date.parse(p.bucket_utc)) && countOf(p) !== null);
+        const covered = valid.filter((p) => countOf(p) > 0);
+        const bucketMs = Math.max(1000, Number(rawxSummary.bucket_seconds || 3600) * 1000);
+        const from = Date.parse(rawxSummary.requested_window?.from);
+        const to = Date.parse(rawxSummary.requested_window?.to);
+        const observedStart = covered.length ? Math.min(...covered.map((p) => Date.parse(p.bucket_utc))) : NaN;
+        const observedEnd = covered.length ? Math.max(...covered.map((p) => Date.parse(p.bucket_utc) + bucketMs)) : NaN;
+        const start = Number.isFinite(from) ? from : observedStart;
+        const end = Number.isFinite(to) && to > start ? to : observedEnd;
+        const canDraw = covered.length > 0 && Number.isFinite(start) && Number.isFinite(end) && end > start;
+        const span = canDraw ? end - start : 1;
+        const ids = [...new Set(rawxSummary.devices.map((d) => d.device_id))].sort();
+        const selectedRawxDevice = rawxSummary.devices.find((d) => d.device_id === applied.deviceId && Number(d.epochs) > 0);
+        const formatDate = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+        return (
+          <section className="panel sensor-card sensor-rawx-unified" aria-label="GNSS observation quality and timeline">
+            {selectedRawxDevice && <div className="sensor-v2-section-head"><div>
+              <span className="sensor-v2-eyebrow">Actual RAWX · verified UTC</span>
+              <h2>GNSS observation quality</h2>
+            </div></div>}
+            {selectedRawxDevice && rawxSummary.devices.filter((d) => d.device_id === applied.deviceId).map((d) => (
+              <div key={d.device_id}>
+                <div className="sensor-rawx-selected-device">{d.device_id}</div>
+                <div className="sensor-rawx-kpi-grid">
+                  {[
+                    ["Observed epochs", Number(d.epochs).toLocaleString()],
+                    ["Median interval", d.median_interval_s == null ? "—" : `${Number(d.median_interval_s).toFixed(1)} s`],
+                    ["Maximum gap", d.max_gap_s == null ? "—" : `${Number(d.max_gap_s).toFixed(1)} s`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="sensor-rawx-kpi"><small>{label}</small><strong>{value}</strong></div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {selectedRawxDevice && <div className="sensor-rawx-unified-divider" />}
+            {!selectedRawxDevice && (
+              <p className="sensor-v2-note" role="status">GNSS RAWX perangkat terpilih tidak tersedia pada rentang waktu ini. Timeline berikut membandingkan perangkat lain di site yang sama; coba pilih rentang waktu lebih panjang.</p>
+            )}
+            <div className="sensor-v2-section-head"><div>
+              <span className="sensor-v2-eyebrow">Availability · site-wide comparison</span>
+              <h2>GNSS observation timeline</h2>
+            </div><small>{Math.round(bucketMs / 60000)}-minute buckets</small></div>
+            {canDraw ? <>
+              <div className="sensor-rawx-timeline-axes"><span>{formatDate(start)}</span><span>{formatDate(end)}</span></div>
+              {ids.map((id) => {
+                const own = covered.filter((p) => p.device_id === id);
+                return <div className="sensor-rawx-timeline-lane" key={id}>
+                  <strong title={id}>{id}</strong>
+                  <div className="sensor-rawx-timeline-track" aria-label={`${id} actual RAWX availability`}>
+                    {own.map((p, idx) => {
+                      const t = Date.parse(p.bucket_utc);
+                      const clippedStart = Math.max(start, t);
+                      const clippedEnd = Math.min(end, t + bucketMs);
+                      if (clippedEnd <= clippedStart) return null;
+                      const left = 100 * (clippedStart - start) / span;
+                      const width = 100 * (clippedEnd - clippedStart) / span;
+                      return <span key={`${id}-${p.bucket_utc}-${idx}`} className="sensor-rawx-timeline-segment"
+                        style={{ left: `${left}%`, width: `${width}%` }}
+                        title={`${id} · ${p.bucket_utc} · ${countOf(p)} epochs · verified RAWX UTC`} />;
+                    })}
+                  </div>
+                  <small>{own.length} active buckets</small>
+                </div>;
+              })}
+            </> : <p className="sensor-v2-note">No positive-count observation buckets available for this window; the timeline is not inferred.</p>}
+            {rows.length > 0 && valid.length === 0 && <p className="sensor-v2-note">API point records lack per-bucket counts. Timeline suppressed to avoid falsely showing continuous observations.</p>}
+            <small className="sensor-v2-note">Gaps remain empty; segments are positioned by UTC timestamp and true bucket duration. This is availability, not displacement or safety status.</small>
+          </section>
+        );
+      })()}
+
+      {gnss.length > 0 && <section className="panel sensor-v2-quality">
         <div className="sensor-v2-section-head">
           <div>
             <span className="sensor-v2-eyebrow">GNSS quality</span>
@@ -838,9 +905,15 @@ export default function SensorMonitoring() {
             <strong>{lastAppliedAt ? lastAppliedAt.toLocaleString() : "—"}</strong>
           </div>
         </div>
-      </section>
+      </section>}
 
-      {applied.dataType !== "accel" && (
+      {applied.source === SOURCE_ACTUAL && applied.dataType !== "accel" && rawxSummary?.requested_window && (
+        <GnssSynchronizationQA siteId={applied.siteId} window={rawxSummary.requested_window} deviceId={applied.deviceId} />
+      )}
+      {applied.source === SOURCE_ACTUAL && applied.dataType !== "accel" && rawxSummary?.requested_window && (
+        <SatelliteQualityQA siteId={applied.siteId} deviceId={applied.deviceId} window={rawxSummary.requested_window} />
+      )}
+      {applied.dataType !== "accel" && gnss.length > 0 && (
         <div className="sensor-grid sensor-gnss-grid">
           <section className="panel sensor-card">
             <div className="sensor-chart-head">
@@ -915,7 +988,7 @@ export default function SensorMonitoring() {
         </div>
       )}
 
-      {applied.dataType !== "gnss" && (
+      {applied.dataType !== "gnss" && (events.length > 0 || wave.length > 0) && (
         <section className="panel sensor-event-panel sensor-v2-event">
           <div className="sensor-event-controls">
             <div>
@@ -929,8 +1002,8 @@ export default function SensorMonitoring() {
               <select value={eventFile} onChange={(e) => setEventFile(e.target.value)}>
                 <option value="">— select event —</option>
                 {events.map((e) => (
-                  <option key={String(e.event_id)} value={e.source_file}>
-                    {e.source_file}
+                  <option key={String(e.event_id)} value={e.source_file} disabled={applied.source === SOURCE_ACTUAL && !e.raw_available}>
+                    {e.source_file}{applied.source === SOURCE_ACTUAL ? (e.raw_available ? ` · RAW ${e.actual_raw_samples} samples` : " · RAW unavailable") : ""}
                   </option>
                 ))}
               </select>
@@ -941,7 +1014,7 @@ export default function SensorMonitoring() {
             <button
               className="admin-btn admin-btn-primary"
               onClick={loadWaveform}
-              disabled={!eventFile || waveBusy}
+              disabled={!eventFile || waveBusy || (applied.source === SOURCE_ACTUAL && !event?.raw_available)}
             >
               {waveBusy ? "Loading waveform…" : "Load waveform"}
             </button>
@@ -954,7 +1027,8 @@ export default function SensorMonitoring() {
                 <div><span>Event ID</span><strong>{event.event_id ?? "—"}</strong></div>
                 <div><span>Device</span><strong>{event.device_id || applied.deviceId || "—"}</strong></div>
                 <div><span>Observed rate</span><strong>{event.observed_sample_rate_hz == null ? "—" : `${event.observed_sample_rate_hz} Hz`}</strong></div>
-                <div><span>Samples</span><strong>{event.sample_count ?? "—"}</strong></div>
+                <div><span>Declared samples</span><strong>{event.sample_count ?? "—"}</strong></div>
+                {applied.source === SOURCE_ACTUAL && <div><span>Persisted RAW</span><strong>{event.actual_raw_samples ?? 0} · {event.raw_available ? "available" : "unavailable"}</strong></div>}
                 <div><span>Duration</span><strong>{event.duration_ms == null ? "—" : `${event.duration_ms} ms`}</strong></div>
                 <div><span>Median gap</span><strong>{event.median_gap_ms == null ? "—" : `${event.median_gap_ms} ms`}</strong></div>
                 <div><span>Max gap</span><strong>{event.max_gap_ms == null ? "—" : `${event.max_gap_ms} ms`}</strong></div>
@@ -1069,7 +1143,9 @@ export default function SensorMonitoring() {
         </section>
       )}
 
-      <section className="panel sensor-v2-provenance">
+      <details className="panel sensor-v2-provenance" style={{padding: "12px 18px", marginTop: 12}}>
+        <summary style={{cursor: "pointer", fontWeight: 600}}>Data provenance & interpretation</summary>
+        <div style={{marginTop: 12}}>
         <div className="sensor-v2-section-head">
           <div>
             <span className="sensor-v2-eyebrow">Provenance & interpretation</span>
@@ -1081,8 +1157,8 @@ export default function SensorMonitoring() {
           <div><span>Source</span><strong>{sourceLabel}</strong></div>
           <div><span>Site</span><strong>{applied.siteId || "—"}</strong></div>
           <div><span>Device</span><strong>{applied.deviceId || "—"}</strong></div>
-          <div><span>Latest source file</span><strong>{sourceFile}</strong></div>
-          <div><span>GNSS validation</span><strong>{latest?.validation_status || (applied.source === SOURCE_ACTUAL ? "unvalidated" : applied.source === SOURCE_REFERENCE ? "reference_sample" : "not_applicable")}</strong></div>
+          {sourceFile && sourceFile !== "unavailable" && sourceFile !== "—" && <div><span>Latest position source file</span><strong>{sourceFile}</strong></div>}
+          {latest && <div><span>Position validation</span><strong>{latest.validation_status || "unvalidated"}</strong></div>}
           <div><span>Interpolation</span><strong>none</strong></div>
         </div>
 
@@ -1104,7 +1180,8 @@ export default function SensorMonitoring() {
             PPK/displacement remains UNVALIDATED until geodetic production acceptance is complete.
           </p>
         )}
-      </section>
+        </div>
+      </details>
 
       <details className="panel sensor-guard">
         <summary>Data limitations & interpretation</summary>

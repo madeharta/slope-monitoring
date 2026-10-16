@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Security boundary for transport compression. Parsing never trusts filename suffixes to decide decompression.
 class RINEXNormalizationError(ValueError):
     pass
 
@@ -35,6 +36,7 @@ def normalize_rinex_transport(
 ) -> NormalizedRINEXContent:
     if not content:
         raise RINEXNormalizationError("empty RINEX content")
+    # Output size, expansion ratio, timeout, and nesting depth bound decompression before parsing.
     max_bytes = max_decompressed_bytes or _positive_int_env(
         "RINEX_DECOMPRESS_MAX_BYTES", 512 * 1024 * 1024
     )
@@ -90,6 +92,7 @@ def _decompress_gzip(content: bytes, *, max_bytes: int, ratio: float) -> bytes:
     return bytes(output)
 
 
+# Legacy .Z is delegated to gzip/uncompress but stdout remains bounded in-process.
 def _decompress_unix_compress(
     content: bytes,
     *,

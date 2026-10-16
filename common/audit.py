@@ -1,8 +1,10 @@
 from __future__ import annotations
 from typing import Any
+
 class AuditLog:
     def __init__(self, pool) -> None:
         self._pool = pool
+
     async def record_on_conn(
         self,
         conn,
@@ -13,6 +15,7 @@ class AuditLog:
         old_value: Any = None,
         new_value: Any = None,
     ) -> None:
+        # Use this method when the audit record must commit or roll back with a business transaction.
         await conn.execute(
             """
             INSERT INTO audit_log (actor_user_id, action, target_type, target_id, old_value, new_value)
@@ -21,6 +24,7 @@ class AuditLog:
             int(actor_user_id) if actor_user_id is not None else None,
             action, target_type, target_id, old_value, new_value,
         )
+
     async def record(
         self,
         actor_user_id: str | int | None,
@@ -30,6 +34,7 @@ class AuditLog:
         old_value: Any = None,
         new_value: Any = None,
     ) -> None:
+        # Default standalone audit path remains compatible with existing callers.
         async with self._pool.acquire() as conn:
             await self.record_on_conn(
                 conn, actor_user_id, action, target_type, target_id, old_value, new_value

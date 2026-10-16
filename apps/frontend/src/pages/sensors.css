@@ -1026,3 +1026,161 @@
     grid-template-columns:1fr;
   }
 }
+
+/* Batch 11F: stop double topbar spacing on Sensors. */
+.sensor-page { padding-top:24px !important; scroll-padding-top:24px !important; }
+@media(max-width:800px) { .sensor-page { padding-top:18px !important; scroll-padding-top:18px !important; } }
+
+/* Batch 12: waveform controls / chart breathing room */
+.sensor-page .sensor-v2-event .sensor-event-controls {
+  margin-bottom: 20px;
+  align-items: end;
+}
+.sensor-page .sensor-v2-event .sensor-v2-wave-actions {
+  margin-top: 0;
+  margin-bottom: 24px;
+  gap: 14px;
+  align-items: center;
+}
+.sensor-page .sensor-v2-event .sensor-v2-wave-actions > button {
+  flex-shrink: 0;
+}
+.sensor-page .sensor-v2-event .sensor-v2-wave-kpis {
+  margin: 16px 0 22px;
+}
+.sensor-page .sensor-v2-event .sensor-event-meta-grid {
+  margin-bottom: 18px;
+}
+.sensor-page .sensor-v2-event .sensor-grid {
+  margin-top: 18px;
+  gap: 18px;
+}
+@media(max-width: 650px) {
+  .sensor-page .sensor-v2-event .sensor-v2-wave-actions {
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
+
+/* Batch 12: actual RAWX observation timeline */
+.sensor-rawx-timeline{margin:0 0 16px;padding:18px 20px;min-width:0}
+.sensor-rawx-timeline-axes{display:flex;justify-content:space-between;gap:12px;padding:0 90px 8px 150px;font-size:11px;color:var(--text-muted,#64748b)}
+.sensor-rawx-timeline-lane{display:grid;grid-template-columns:140px minmax(0,1fr) 80px;gap:10px;align-items:center;margin:11px 0}
+.sensor-rawx-timeline-lane>strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sensor-rawx-timeline-lane>small{text-align:right;font-size:11px;color:var(--text-muted,#64748b)}
+.sensor-rawx-timeline-track{height:20px;position:relative;background:var(--surface-subtle,#e9eef4);border-radius:5px;overflow:hidden}
+.sensor-rawx-timeline-segment{position:absolute;top:2px;bottom:2px;background:#187e97;border-radius:3px;min-width:2px}
+@media(max-width:650px){.sensor-rawx-timeline-axes{padding:0 0 8px;font-size:10px}.sensor-rawx-timeline-lane{grid-template-columns:90px minmax(0,1fr) 55px;gap:6px}.sensor-rawx-timeline-lane>strong{font-size:10px}.sensor-rawx-timeline{padding:14px}}
+
+
+/* Batch 12 GNSS quality + strictly time-scaled RAWX availability */
+.sensor-rawx-unified{width:100%;max-width:none;margin:0 0 16px;padding:18px 20px;min-width:0}
+.sensor-rawx-selected-device{font-size:12px;color:var(--text-muted,#64748b);margin:10px 0}
+.sensor-rawx-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.sensor-rawx-kpi{padding:12px 14px;border:1px solid var(--border-color,#dbe3eb);border-radius:9px;min-width:0}
+.sensor-rawx-kpi small{display:block;margin-bottom:6px}
+.sensor-rawx-kpi strong{font-size:clamp(16px,2vw,22px)}
+.sensor-rawx-unified-divider{border-top:1px solid var(--border-color,#dbe3eb);margin:18px 0}
+.sensor-rawx-unified .sensor-rawx-timeline-track{overflow:hidden}
+.sensor-rawx-unified .sensor-rawx-timeline-segment{min-width:0}
+@media(max-width:650px){.sensor-rawx-kpi-grid{grid-template-columns:1fr}.sensor-rawx-unified{padding:14px}}
+
+/* Batch 12 GNSS card alignment with filter and provenance */
+/* Match the 27px inner gutter of Filter and Data Provenance panels. */
+.pgdoc2-page > .sensor-rawx-unified,
+.sensor-rawx-unified {
+  box-sizing: border-box;
+  width: calc(100% - 54px);
+  max-width: none;
+  margin: 0 27px 16px;
+}
+@media (max-width: 700px) {
+  .pgdoc2-page > .sensor-rawx-unified,
+  .sensor-rawx-unified {
+    width: calc(100% - 24px);
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+}
+
+/* B12 FINAL GNSS LAYOUT START */
+/* Unified GNSS panel follows exactly the same horizontal gutter as filter/provenance. */
+.sensor-page .sensor-rawx-unified,
+.pgdoc2-page > .sensor-rawx-unified,
+.sensor-rawx-unified {
+  box-sizing: border-box;
+  width: calc(100% - 54px);
+  max-width: none;
+  margin: 0 27px 16px;
+  min-width: 0;
+}
+/* Hide an empty GNSS quality heading/divider for accelerometer-only devices,
+   while retaining the site-wide RAWX timeline. Chrome/Safari support :has. */
+.sensor-rawx-unified:not(:has(.sensor-rawx-kpi-grid)) > .sensor-rawx-unified-divider {
+  display: none;
+}
+.sensor-rawx-unified:not(:has(.sensor-rawx-kpi-grid)) > .sensor-rawx-timeline-header {
+  margin-top: 0;
+}
+.sensor-rawx-unified .sensor-rawx-kpi-grid { width:100%; }
+.sensor-rawx-unified .sensor-rawx-timeline-track { min-width:0; }
+@media(max-width:700px) {
+  .sensor-page .sensor-rawx-unified,
+  .pgdoc2-page > .sensor-rawx-unified,
+  .sensor-rawx-unified {
+    width: calc(100% - 24px);
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+}
+/* B12 FINAL GNSS LAYOUT END */
+
+
+/* B12 read-only epoch synchronization summary */
+.gnss-sync-qa{margin:0 28px 16px;width:auto;min-width:0;box-sizing:border-box}
+.gnss-sync-row{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr) 145px;gap:14px;align-items:center;margin:12px 0;font-size:12px}
+.gnss-sync-track{height:15px;background:#e5eaf0;border-radius:5px;overflow:hidden}
+.gnss-sync-track>span{display:block;height:100%;background:#0a819b;border-radius:5px}
+@media(max-width:600px){.gnss-sync-row{grid-template-columns:1fr;gap:5px}.gnss-sync-row>span{margin-bottom:4px}}
+
+/* B12 GNSS synchronization: responsive page gutter */
+@media(max-width:700px){.gnss-sync-qa{margin-left:12px;margin-right:12px}}
+
+/* B12 SATELLITE QUALITY: aligned two-column diagnostic grid */
+.satellite-quality-qa{margin:0 28px 16px!important;width:auto!important;max-width:none!important;}
+.satellite-quality-qa-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 20px;align-items:start;}
+.satellite-quality-qa-grid>div{min-width:0;}
+@media(max-width:850px){.satellite-quality-qa-grid{grid-template-columns:minmax(0,1fr);}}
+@media(max-width:700px){.satellite-quality-qa{margin-left:12px!important;margin-right:12px!important;}}
+
+/* B12 SATELLITE QUALITY UX POLISH */
+.satellite-quality-qa{margin:0 28px 16px!important;width:auto!important;max-width:none!important;}
+.satellite-quality-qa-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 24px;align-items:start;}
+.satellite-qa-card-item{min-width:0;border:1px solid #e4ebf2;border-radius:14px;padding:16px 18px 14px;background:#fcfdff;display:flex;flex-direction:column;gap:10px;}
+.satellite-qa-card-head{display:flex;flex-direction:column;gap:4px;}
+.satellite-qa-card-head strong{font-size:13px;line-height:1.3;}
+.satellite-qa-card-head span{font-size:11px;line-height:1.45;opacity:.72;}
+.satellite-qa-svg{width:100%;display:block;margin-top:2px;overflow:visible;}
+.satellite-qa-footnote{font-size:11px;line-height:1.45;opacity:.68;margin-top:2px;}
+.satellite-histogram{display:flex;align-items:flex-end;gap:10px;height:170px;margin-top:4px;padding:10px 6px 4px;border-bottom:1px solid #c7d2df;}
+.satellite-histogram-col{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:8px;height:100%;}
+.satellite-histogram-bar{background:#117C89;border-radius:6px 6px 0 0;min-height:4px;cursor:default;}
+.satellite-histogram-col span{font-size:10px;opacity:.76;text-align:center;}
+.satellite-constellation-list{display:grid;gap:10px;margin-top:2px;}
+.satellite-constellation-row{display:grid;grid-template-columns:90px 1fr 62px;gap:10px;align-items:center;font-size:12px;}
+.satellite-constellation-track{background:#e7edf3;height:10px;border-radius:999px;overflow:hidden;}
+.satellite-constellation-fill{height:100%;border-radius:999px;}
+@media(max-width:1000px){.satellite-quality-qa-grid{grid-template-columns:minmax(0,1fr);}}
+@media(max-width:700px){.satellite-quality-qa{margin-left:12px!important;margin-right:12px!important;padding:18px 16px 14px!important;}.satellite-qa-card-item{padding:14px 14px 12px;}.satellite-constellation-row{grid-template-columns:84px 1fr 56px;gap:8px;}}
+
+
+/* B12 STAGING SATELLITE RICH TOOLTIP */
+.satellite-rich-chart{position:relative;min-width:0;margin-top:8px;}
+.satellite-rich-chart svg circle[tabindex]{cursor:crosshair;outline:none;}
+.satellite-rich-chart svg circle[tabindex]:focus{stroke:#0e7888;stroke-width:2px;}
+.satellite-rich-tooltip{position:absolute;transform:translate(-50%,-105%);pointer-events:none;z-index:4;min-width:180px;max-width:min(260px,85%);border:1px solid #cbd8e4;border-radius:9px;background:#fff;color:#152e40;box-shadow:0 8px 18px #1234;padding:9px 11px;display:grid;gap:4px;font-size:11px;line-height:1.4;}
+.satellite-rich-tooltip strong{font-size:12px;}
+.satellite-rich-tooltip b{font-size:13px;color:#087a8b;}
+.satellite-quality-qa-grid{gap:28px!important;}
+.satellite-qa-card-item{padding:18px 20px!important;}
+@media(max-width:760px){.satellite-rich-tooltip{min-width:140px;}}

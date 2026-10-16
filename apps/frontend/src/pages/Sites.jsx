@@ -1,22 +1,31 @@
+// Halaman Sites — daftar semua site + CRUD (2026-09-20: Update & Delete
+// ditambahkan, sebelumnya cuma Read+Create-lewat-halaman-lain). Read
+// masih reuse /api/overview (tidak ada endpoint list-sites baru), tapi
+// Update/Delete pakai endpoint baru PUT/DELETE /api/v1/sites/:id.
+
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOverview } from "../api";
 import { useAuth } from "../context/AuthContext.jsx";
+
 export default function Sites() {
   const navigate = useNavigate();
   const { authFetch, auth } = useAuth();
   const [slopes, setSlopes] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState(null);
+  const [editing, setEditing] = useState(null); // site_id sedang diedit, atau null
   const [editDraft, setEditDraft] = useState({ name: "", lat: "", lon: "" });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+
   const isAdmin = auth?.role === "admin";
+
   function reload() {
     getOverview().then((o) => setSlopes(o.slopes || [])).catch(() => {});
   }
   useEffect(() => { reload(); }, []);
+
   const filtered = useMemo(() => {
     if (!slopes) return null;
     return slopes.filter((s) => {
@@ -25,11 +34,13 @@ export default function Sites() {
       return true;
     });
   }, [slopes, statusFilter, search]);
+
   function startEdit(s) {
     setEditing(s.site_id);
     setEditDraft({ name: s.name, lat: s.lat, lon: s.lon });
     setError(null);
   }
+
   async function saveEdit(site_id) {
     setBusy(site_id);
     setError(null);
@@ -47,6 +58,7 @@ export default function Sites() {
       setBusy(null);
     }
   }
+
   async function del(site_id) {
     if (!window.confirm(`Hapus site "${site_id}"? Tindakan ini tidak bisa dibatalkan.`)) return;
     setBusy(site_id);
@@ -54,12 +66,13 @@ export default function Sites() {
     try {
       const r = await authFetch(`/api/v1/sites/${site_id}`, { method: "DELETE" });
       const body = await r.json();
-      if (!r.ok) { setError(body.detail); return; }
+      if (!r.ok) { setError(body.detail); return; } // pesan sudah jelas dari backend kalau masih ada device
       reload();
     } finally {
       setBusy(null);
     }
   }
+
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
@@ -67,6 +80,7 @@ export default function Sites() {
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Sites</h1>
         {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => navigate("/admin/sites")}>+ Site Baru</button>}
       </div>
+
       <div className="panel" style={{ maxWidth: 1050, margin: "0 auto", padding: 20 }}>
         <div className="table-filters">
           <input placeholder="Cari nama/site ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -78,6 +92,7 @@ export default function Sites() {
           </select>
           <span className="table-total">{filtered ? filtered.length : 0} / {slopes ? slopes.length : 0} site</span>
         </div>
+
         {error && <div className="admin-error" style={{ marginBottom: 12 }}>{error}</div>}
         {!slopes && <div className="loading">Memuat…</div>}
         {filtered && filtered.length === 0 && <div className="sc-row">Tidak ada site yang cocok filter.</div>}

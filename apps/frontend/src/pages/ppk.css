@@ -1,3 +1,4 @@
+@import "./ppk-qa.css";
 /* PPK technical QA — production validation remains fail-closed */
 .ppk-page{ padding-bottom:48px; }
 .ppk-warning{ max-width:1500px; margin:0 auto 14px; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; border:1px solid #b88b43; border-radius:10px; background:#35240c; color:#ffe7ac; font-size:12px; line-height:1.5; }
@@ -90,3 +91,50 @@
 .ppk-overview-link:hover{ color:var(--ink); border-color:var(--line-strong); }
 @media (max-width:1200px){ .ppk-stat-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); } .ppk-filter-panel{ grid-template-columns:1fr 1fr 100px auto; } .ppk-load-note{ grid-column:1/-1; } }
 @media (max-width:800px){ .ppk-grid{ grid-template-columns:1fr; } .ppk-stat-grid{ grid-template-columns:1fr 1fr; } .ppk-filter-panel{ grid-template-columns:1fr; } .ppk-hashes{ grid-template-columns:1fr; } .ppk-latest{ grid-template-columns:1fr; } }
+
+/* b12-unified-filter-v1 */
+.ppk-legacy-details,.ppk-qa-section{max-width:1500px;margin:0 auto 14px}
+.ppk-legacy-details>summary{cursor:pointer;padding:12px 15px;border:1px solid var(--line);border-radius:9px;background:var(--panel);font-size:12px;font-weight:650;margin-bottom:12px}
+.ppk-filter-panel{grid-template-columns:minmax(160px,1.2fr) minmax(160px,1.1fr) minmax(130px,1fr) 110px auto;align-items:end}
+.ppk-filter-panel .ppk-load-note{grid-column:1/-1}
+@media(max-width:1000px){.ppk-filter-panel{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.ppk-filter-panel{grid-template-columns:minmax(0,1fr)}}
+
+
+/* b12-ppk-unified-layout-safe-v1 */
+/* Align filter, experimental charts and diagnostics to a single content grid. */
+.ppk-page .ppk-warning,
+.ppk-page .ppk-filter-panel,
+.ppk-page .ppk-qa-section,
+.ppk-page .ppk-legacy-details,
+.ppk-page .ppk-method-note {
+  box-sizing:border-box;
+  width: min(100%, 1500px);
+  max-width:1500px;
+  min-width:0;
+  margin-left:auto;
+  margin-right:auto;
+  align-self:stretch;
+}
+.ppk-page .ppk-filter-panel {
+  display:grid;
+  grid-template-columns: minmax(180px,1.3fr) minmax(155px,1fr) minmax(145px,1fr) minmax(110px,.55fr) auto;
+  gap:12px;
+  padding:16px 18px;
+  align-items:end;
+}
+.ppk-page .ppk-filter-panel > label { min-width:0; }
+.ppk-page .ppk-filter-panel input,
+.ppk-page .ppk-filter-panel select { display:block; width:100%; box-sizing:border-box; }
+.ppk-page .ppk-filter-panel .ppk-load-note { grid-column:1/-1; }
+.ppk-page .ppk-legacy-details > summary { margin-bottom:0; }
+.ppk-page .ppk-legacy-details[open] > summary { margin-bottom:14px; }
+/* No empty operational cards until genuine operational records are returned. */
+.ppk-page .ppk-legacy-empty .ppk-grid { display:none; }
+@media (max-width:1000px){
+  .ppk-page .ppk-filter-panel { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .ppk-page .ppk-filter-panel .ppk-refresh { justify-self:start; }
+}
+@media (max-width:620px){
+  .ppk-page .ppk-filter-panel { grid-template-columns:minmax(0,1fr); }
+}

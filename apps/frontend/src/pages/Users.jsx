@@ -1,7 +1,13 @@
+// Halaman Users — CRUD user (2026-09-20, baru — sebelumnya TIDAK ADA
+// cara membuat user lewat aplikasi sama sekali). Admin-only, dicek
+// inline (bukan route guard terpisah) — pola sama seperti AdminSites.jsx.
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+
 const ROLES = ["viewer", "operator", "admin"];
+
 export default function Users() {
   const { authFetch, auth } = useAuth();
   const navigate = useNavigate();
@@ -10,6 +16,7 @@ export default function Users() {
   const [showCreate, setShowCreate] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", password: "", role: "viewer" });
   const [busy, setBusy] = useState(null);
+
   if (auth?.role !== "admin") {
     return (
       <div className="l2 pgdoc2-page">
@@ -18,10 +25,12 @@ export default function Users() {
       </div>
     );
   }
+
   function reload() {
     authFetch("/api/v1/users").then((r) => r.json()).then((body) => setUsers(body.users || [])).catch((e) => setError(String(e)));
   }
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function createUser() {
     setBusy("__new__");
     setError(null);
@@ -40,6 +49,7 @@ export default function Users() {
       setBusy(null);
     }
   }
+
   async function changeRole(user_id, role) {
     setBusy(user_id);
     setError(null);
@@ -50,12 +60,13 @@ export default function Users() {
         body: JSON.stringify({ role }),
       });
       const body = await r.json();
-      if (!r.ok) { setError(body.detail); return; }
+      if (!r.ok) { setError(body.detail); return; } // pesan jelas kalau ini admin terakhir
       reload();
     } finally {
       setBusy(null);
     }
   }
+
   async function toggleDisable(u) {
     setBusy(u.user_id);
     setError(null);
@@ -69,6 +80,7 @@ export default function Users() {
       setBusy(null);
     }
   }
+
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
@@ -76,6 +88,7 @@ export default function Users() {
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Users</h1>
         <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ User Baru</button>
       </div>
+
       <div className="panel" style={{ maxWidth: 950, margin: "0 auto", padding: 20 }}>
         {showCreate && (
           <div className="admin-warn" style={{ marginBottom: 16, background: "var(--panel-2)", color: "var(--ink-2)", borderColor: "var(--line)" }}>
@@ -89,6 +102,7 @@ export default function Users() {
             </div>
           </div>
         )}
+
         {error && <div className="admin-error" style={{ marginBottom: 12 }}>{error}</div>}
         {!users && !error && <div className="loading">Memuat…</div>}
         {users && (

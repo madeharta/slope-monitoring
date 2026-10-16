@@ -1,14 +1,30 @@
+"""GET /api/v1/devices — daftar device untuk halaman Devices.
+POST/PUT/DELETE /api/v1/devices — CRUD device (2026-09-20, baru —
+sebelumnya TIDAK ADA cara mendaftarkan device lewat API sama sekali,
+cuma lewat SQL manual di seed script).
+GET /api/v1/audit-log — daftar audit_log untuk halaman Audit Log, dengan
+filter (action/actor) dan paging offset-based sungguhan (total count
+disertakan supaya frontend bisa render "halaman X dari Y").
+"""
+
 from __future__ import annotations
+
 from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
+
 from apps.api.dependencies import get_db_pool, require_role
 from common.audit import AuditLog
 from common.errors import AppError, ErrorCode, NotFoundError
 from common.security import TokenPayload
 from services.device_service.device_repository import DeviceRepository, NewDevice
+
 router = APIRouter(prefix="/api/v1", tags=["devices_and_audit"])
-_ONLINE_WINDOW_SECONDS = 900
+
+_ONLINE_WINDOW_SECONDS = 900  # sama dengan OverviewRepository
+
+
 @router.get("/devices")
 async def list_devices(request: Request, user: TokenPayload = Depends(require_role("viewer"))) -> dict:
     pool = get_db_pool(request)
@@ -35,11 +51,15 @@ async def list_devices(request: Request, user: TokenPayload = Depends(require_ro
             for r in rows
         ],
     }
+
+
 class CreateDeviceRequest(BaseModel):
     device_id: str
     device_type: str
     site_id: str
     label: str | None = None
+
+
 @router.post("/devices")
 async def create_device(
     body: CreateDeviceRequest, request: Request, user: TokenPayload = Depends(require_role("admin")),
@@ -53,11 +73,20 @@ async def create_device(
         new_value={"device_type": body.device_type, "site_id": body.site_id, "label": body.label},
     )
     return {"ok": True, "device_id": body.device_id}
+
+
 class UpdateDeviceRequest(BaseModel):
     device_type: str | None = None
     site_id: str | None = None
     label: str | None = None
+    # Pydantic tidak otomatis membedakan "field tidak dikirim" vs "dikirim
+    # null/kosong" lewat None biasa — pola sama yang dipakai
+    # _build_update_clause (label_given eksplisit), supaya "kosongkan
+    # label" (kirim label="") tetap tereksekusi, bukan diam-diam diabaikan
+    # seperti device_type/site_id yang None berarti "jangan diubah".
     label_given: bool = False
+
+
 @router.put("/devices/{device_id}")
 async def update_device(
     device_id: str, body: UpdateDeviceRequest, request: Request, user: TokenPayload = Depends(require_role("admin")),
@@ -69,13 +98,31 @@ async def update_device(
         new_value={"device_type": body.device_type, "site_id": body.site_id, "label": body.label if body.label_given else "(tidak diubah)"},
     )
     return {"ok": True, "device_id": device_id}
+
+
 @router.delete("/devices/{device_id}")
 async def delete_device(
     device_id: str, request: Request, force: bool = Query(default=False), purge: bool = Query(default=False),
     user: TokenPayload = Depends(require_role("admin")),
 ) -> dict:
+    """Beda dengan hapus site: measurements.device_id TIDAK punya FK ke
+    devices (dicek — memang begitu sejak 001_schema.sql), jadi hapus
+    device dengan riwayat data TIDAK akan ditolak Postgres secara
+    otomatis. Makanya dicek manual di sini dan diminta `force=true` kalau
+    memang mau lanjut meski ada riwayat — peringatan, bukan blokir keras
+    (beda dari site, yang blokirnya memang keras karena FK).
+
+    `purge` (2026-09-21, baru — sebelumnya TIDAK ADA cara membuang
+    measurements sekaligus, cuma bisa manual lewat SQL): opt-in eksplisit,
+    default TETAP false. Kalau true, measurements device ini IKUT
+    dihapus dalam transaksi yang sama. Sengaja default-nya tidak
+    menghapus — bacaan sensor adalah fakta historis, device yang
+    dinonaktifkan/diganti tidak berarti riwayatnya harus ikut hilang.
+    `purge` untuk kasus eksplisit "memang mau bersih total" (data
+    test/sintetis), bukan perilaku baku."""
     pool = get_db_pool(request)
     repo = DeviceRepository(pool)
+
     has_history = await repo.has_measurement_history(device_id)
     if not force and has_history:
         raise AppError(
@@ -83,6 +130,11 @@ async def delete_device(
             f"device '{device_id}' punya riwayat data di tabel measurements — data itu TIDAK IKUT terhapus "
             f"kecuali purge=true juga dikirim, kirim ulang dengan force=true kalau tetap mau lanjut",
         )
+
+    # Audit dulu, baru hapus, dalam satu transaksi — sama seperti delete_site
+    # (lihat sites.py untuk alasan lengkap: trigger butuh device_id masih
+    # ada saat audit di-INSERT, dan supaya audit tidak "bohong" kalau
+    # delete-nya sendiri gagal).
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -98,6 +150,8 @@ async def delete_device(
     if result == "DELETE 0":
         raise NotFoundError("device", device_id)
     return {"ok": True, "purged_measurements": purged_count}
+
+
 @router.get("/measurements")
 async def list_measurements(
     request: Request,
@@ -114,13 +168,21 @@ async def list_measurements(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
+    """Tabular measurement viewer with server-side filtering/paging.
+
+    This endpoint is intentionally read-only and role-gated to viewer+.
+    Sorting is server-side and limited to an explicit whitelist so query
+    parameters cannot inject arbitrary SQL identifiers or directions.
+    """
     pool = get_db_pool(request)
     where: list[str] = []
     args: list = []
+
     def add(value, clause: str):
         if value is not None and value != "":
             args.append(value)
             where.append(clause.format(n=len(args)))
+
     add(site_id, "site_id = ${n}")
     add(device_id, "device_id = ${n}")
     add(quantity, "quantity = ${n}")
@@ -129,6 +191,7 @@ async def list_measurements(
     add(from_time, "time >= ${n}")
     add(to_time, "time <= ${n}")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
     allowed_sorts = {
         "time": "time",
         "received_at": "received_at",
@@ -140,6 +203,7 @@ async def list_measurements(
     if direction not in {"asc", "desc"}:
         raise ValueError("sort_dir must be asc or desc")
     order_sql = f"{order_column} {direction.upper()}, time DESC, received_at DESC"
+
     async with pool.acquire() as conn:
         total = await conn.fetchval(f"SELECT count(*) FROM measurements {where_sql}", *args)
         paged_args = [*args, limit, offset]
@@ -155,6 +219,7 @@ async def list_measurements(
             """,
             *paged_args,
         )
+
     return {
         "ok": True, "total": total, "limit": limit, "offset": offset,
         "sort_by": sort_by, "sort_dir": direction,
@@ -173,24 +238,29 @@ async def list_measurements(
             for r in rows
         ],
     }
+
+
 @router.get("/audit-log")
 async def list_audit_log(
     request: Request, user: TokenPayload = Depends(require_role("viewer")),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    action: str | None = Query(default=None),
+    action: str | None = Query(default=None),        # filter substring, mis. "login" cocok login.success & login.failure
     actor_email: str | None = Query(default=None),
 ) -> dict:
     pool = get_db_pool(request)
     where_clauses = []
     args: list = []
+
     if action:
         args.append(f"%{action}%")
         where_clauses.append(f"a.action ILIKE ${len(args)}")
     if actor_email:
         args.append(f"%{actor_email}%")
         where_clauses.append(f"u.email ILIKE ${len(args)}")
+
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
     async with pool.acquire() as conn:
         total = await conn.fetchval(
             f"""

@@ -42,6 +42,7 @@ class RINEXNavigationAcquisition:
         )
 
     def ensure(self, observed_at: datetime, *, station: str | None = None) -> NavigationAcquisitionResult:
+        # Cache-first behavior prevents repeated downloads for the same observation day.
         try:
             return NavigationAcquisitionResult(
                 resolved=self.resolver.resolve(observed_at, station=station),
@@ -51,6 +52,7 @@ class RINEXNavigationAcquisition:
         except RINEXResolutionError:
             pass
         failures: list[str] = []
+        # Providers are attempted deterministically; each successful artifact still passes resolver checks.
         for source in self.sources:
             try:
                 self._provider_factory(source).fetch(observed_at)

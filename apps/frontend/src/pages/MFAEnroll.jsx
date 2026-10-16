@@ -1,6 +1,18 @@
+// Enrollment MFA — SENGAJA tanpa QR code (butuh library tambahan). Cukup
+// tampilkan secret sebagai teks yang bisa di-copy, user masukkan manual
+// ke authenticator app lewat opsi "Enter a setup key" / "Masukkan kode
+// manual" (ada di SEMUA app authenticator standar — Google Authenticator,
+// Authy, 1Password, dll, tidak perlu scan kamera).
+//
+// Alur 2 langkah:
+//   1. POST /auth/mfa/enroll -> tampilkan secret, user salin ke app-nya
+//   2. User masukkan 6 digit kode dari app -> POST /auth/mfa/verify
+//      -> sukses = enrollment selesai
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+
 export default function MFAEnroll() {
   const { authFetch } = useAuth();
   const navigate = useNavigate();
@@ -10,6 +22,7 @@ export default function MFAEnroll() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+
   async function startEnroll() {
     setBusy(true);
     setError(null);
@@ -25,6 +38,7 @@ export default function MFAEnroll() {
       setBusy(false);
     }
   }
+
   async function confirmCode(e) {
     e.preventDefault();
     setBusy(true);
@@ -44,17 +58,20 @@ export default function MFAEnroll() {
       setBusy(false);
     }
   }
+
   function copySecret() {
     navigator.clipboard?.writeText(secret);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
   return (
     <div className="l2 pg-page">
       <div className="pg-header">
         <button className="pg-back" onClick={() => navigate(-1)} aria-label="Kembali">←</button>
         <h1>Aktifkan Verifikasi Dua Langkah (MFA)</h1>
       </div>
+
       {step === 1 && (
         <div className="panel pg-card" style={{ maxWidth: 480 }}>
           <p className="pg-body">
@@ -67,6 +84,7 @@ export default function MFAEnroll() {
           </button>
         </div>
       )}
+
       {step === 2 && (
         <div className="panel pg-card" style={{ maxWidth: 480 }}>
           <h2>Langkah 1 — Masukkan kode ini ke app Anda</h2>
@@ -86,6 +104,7 @@ export default function MFAEnroll() {
           <button className="pg-back" style={{ width: "auto", padding: "6px 12px", fontSize: 12 }} onClick={copySecret}>
             {copied ? "Tersalin ✓" : "Salin kode"}
           </button>
+
           <h2 style={{ marginTop: 20 }}>Langkah 2 — Masukkan 6 digit dari app</h2>
           <form onSubmit={confirmCode} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
             <input
@@ -101,6 +120,7 @@ export default function MFAEnroll() {
           </form>
         </div>
       )}
+
       {step === 3 && (
         <div className="panel pg-card" style={{ maxWidth: 480, borderColor: "var(--ok)" }}>
           <h2>MFA aktif ✓</h2>

@@ -1,6 +1,13 @@
+// Halaman admin registrasi site baru — POST /api/v1/sites.
+// REVISI 2026-09-20: latar/style ikut dashboard eksis (`.l2`, TopBar
+// global) seperti halaman lain — cuma FORM-nya yang dibungkus kartu
+// putih. Admin-only, dicek inline (bukan route guard terpisah) supaya
+// tetap satu route group dengan Overview/SlopeDetail/Panduan.
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+
 export default function AdminSites() {
   const { authFetch, auth } = useAuth();
   const navigate = useNavigate();
@@ -9,6 +16,7 @@ export default function AdminSites() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+
   if (auth?.role !== "admin") {
     return (
       <div className="l2 pgdoc2-page">
@@ -17,13 +25,16 @@ export default function AdminSites() {
       </div>
     );
   }
+
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
   async function checkNearby() {
     if (!form.lat || !form.lon) return;
     const r = await authFetch(`/api/v1/sites/nearby?lat=${form.lat}&lon=${form.lon}`);
     const body = await r.json();
     setNearby(body.nearby || []);
   }
+
   async function submit(force = false) {
     setSubmitting(true);
     setError(null);
@@ -45,22 +56,26 @@ export default function AdminSites() {
       setSubmitting(false);
     }
   }
+
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
         <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Registrasi Site Baru</h1>
       </div>
+
       <div className="pgdoc2-card">
         <p className="pgdoc-lead">
           Site harus didaftarkan manual sebelum device bisa terhubung ke
           lokasi itu (bukan auto-create dari data masuk).
         </p>
+
         <div className="admin-form">
           <label>Site ID<input value={form.site_id} onChange={set("site_id")} placeholder="SITE-B" /></label>
           <label>Nama<input value={form.name} onChange={set("name")} placeholder="Lereng B" /></label>
           <label>Latitude<input value={form.lat} onChange={set("lat")} onBlur={checkNearby} placeholder="-6.2" /></label>
           <label>Longitude<input value={form.lon} onChange={set("lon")} onBlur={checkNearby} placeholder="106.8" /></label>
+
           {nearby && nearby.length > 0 && (
             <div className="admin-warn">
               <strong>⚠ Site terdekat ditemukan:</strong>
@@ -68,6 +83,7 @@ export default function AdminSites() {
               Pastikan ini memang lokasi berbeda sebelum lanjut.
             </div>
           )}
+
           {error && (
             <div className="admin-error">
               {error}
@@ -76,7 +92,9 @@ export default function AdminSites() {
               </div>
             </div>
           )}
+
           {success && <div className="admin-success">{success}</div>}
+
           <button className="admin-btn admin-btn-primary" onClick={() => submit(false)} disabled={submitting || !form.site_id || !form.name || !form.lat || !form.lon}>
             {submitting ? "Menyimpan…" : "Buat Site"}
           </button>

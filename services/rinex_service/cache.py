@@ -67,6 +67,7 @@ class RINEXCache:
             from services.rinex_service.normalizer import RINEXNormalizationError
             from services.rinex_service.parser import RINEXParseError, parse_rinex_bytes
             metadata_value["rinex"] = parse_rinex_bytes(content, original_name=file_name).to_manifest_dict()
+        # Unsafe compressed input is rejected, not silently cached as an unparsed artifact.
         except RINEXNormalizationError as exc:
             try:
                 artifact_path.unlink()

@@ -20,8 +20,11 @@ _CONTRACT_KEYS = {
 }
 _BATTERY_KEYS = {"battery_cal_m", "battery_cal_c"}
 _GLOBAL_KEYS = {"TriggerStart", "TimeOutTrigger"}
+# Device-facing config is intentionally pinned to the current ITB hardware inventory.
+# Legacy device rows may remain in DB for historical data/FK integrity but must not leak into firmware config.
 _CONTRACT_BATTERY_DEVICE_IDS = {"BASE-01", "ROVER-B1-01", "ROVER-B1-02"}
 def _compose_battery_cal(rows) -> dict[str, dict[str, float | None]]:
+    # Keep the response shape stable even if a current device has not been calibrated yet.
     result = {device_id: {"m": None, "c": None} for device_id in sorted(_CONTRACT_BATTERY_DEVICE_IDS)}
     for row in rows:
         device_id = row["device_id"]

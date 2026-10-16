@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+
 const PAGE_SIZE = 100;
+
 const fmtValue = (v) => {
   if (v == null) return "—";
   if (Math.abs(v) >= 1000) return v.toFixed(2);
   return Number(v).toPrecision(7).replace(/0+$/, "").replace(/\.$/, "");
 };
+
 export default function MeasurementTable({ siteId, devices = [], fromTime = null, toTime = null }) {
   const { authFetch } = useAuth();
   const [deviceId, setDeviceId] = useState("");
@@ -19,7 +22,9 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
   useEffect(() => { setOffset(0); }, [deviceId, quantity, sourceKind, validationStatus, sortBy, sortDir, fromTime, toTime, siteId]);
+
   useEffect(() => {
     let alive = true;
     const params = new URLSearchParams({ site_id: siteId, limit: String(PAGE_SIZE), offset: String(offset) });
@@ -31,6 +36,7 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
     if (toTime) params.set("to", toTime);
     params.set("sort_by", sortBy);
     params.set("sort_dir", sortDir);
+
     if (data.rows.length === 0) {
       setLoading(true);
     } else {
@@ -53,9 +59,11 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
       });
     return () => { alive = false; };
   }, [authFetch, siteId, deviceId, quantity, sourceKind, validationStatus, sortBy, sortDir, fromTime, toTime, offset]);
+
   const quantities = useMemo(() => [...new Set((data.rows || []).map((r) => r.quantity))].sort(), [data.rows]);
   const start = data.total ? offset + 1 : 0;
   const end = Math.min(offset + PAGE_SIZE, data.total);
+
   const toggleSort = (column) => {
     if (sortBy === column) {
       setSortDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -65,6 +73,7 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
     }
   };
   const sortMark = (column) => (sortBy === column ? (sortDir === "desc" ? " ↓" : " ↑") : "");
+
   return (
     <section className="panel measurement-table-panel">
       <div className="phead">

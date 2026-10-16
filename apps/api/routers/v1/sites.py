@@ -1,41 +1,67 @@
+"""POST /api/v1/sites — registrasi site manual, admin-only (keputusan
+2026-09-19: BUKAN auto-create dari data masuk — lihat
+services/site_service/site_repository.py untuk alasan lengkap).
+"""
+
 from __future__ import annotations
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+
 from apps.api.dependencies import get_db_pool, require_role
 from common.audit import AuditLog
 from common.errors import AppError, ErrorCode, NotFoundError
 from common.security import TokenPayload
 from services.site_service.site_repository import NewSite, SiteRepository
+
 router = APIRouter(prefix="/api/v1/sites", tags=["sites"])
+
+
 class CreateSiteRequest(BaseModel):
     site_id: str
     name: str
     lat: float
     lon: float
-    force: bool = False
+    force: bool = False  # true = lanjut meski ada site existing di sekitarnya
+
+
 @router.post("")
 async def create_site(
     body: CreateSiteRequest, request: Request, user: TokenPayload = Depends(require_role("admin")),
 ) -> dict:
     pool = get_db_pool(request)
     repo = SiteRepository(pool)
+    # DuplicateSiteWarning adalah AppError — otomatis jadi respons 422
+    # dengan detail jarak+nama site terdekat lewat handler AppError yang
+    # sudah terbukti andal (lihat error_handler.py).
     await repo.create(NewSite(site_id=body.site_id, name=body.name, lat=body.lat, lon=body.lon), force=body.force)
+    # Audit logging (2026-09-20, sebelumnya TIDAK ADA) — registrasi site
+    # baru adalah perubahan state topologi, layak diaudit sama seperti
+    # device_config.update/model.activate.
     await AuditLog(pool).record(
         actor_user_id=user.sub, action="site.create", target_type="site", target_id=body.site_id,
         new_value={"name": body.name, "lat": body.lat, "lon": body.lon},
     )
     return {"ok": True, "site_id": body.site_id}
+
+
 @router.get("/nearby")
 async def check_nearby(
     lat: float, lon: float, request: Request, user: TokenPayload = Depends(require_role("admin")),
 ) -> dict:
+    """Dipanggil frontend SEBELUM submit form — preview site terdekat
+    tanpa harus benar-benar mencoba create dulu."""
     repo = SiteRepository(get_db_pool(request))
     nearby = await repo.find_nearby(lat, lon)
     return {"ok": True, "nearby": nearby}
+
+
 class UpdateSiteRequest(BaseModel):
     name: str
     lat: float
     lon: float
+
+
 @router.put("/{site_id}")
 async def update_site(
     site_id: str, body: UpdateSiteRequest, request: Request, user: TokenPayload = Depends(require_role("admin")),
@@ -47,10 +73,18 @@ async def update_site(
         new_value={"name": body.name, "lat": body.lat, "lon": body.lon},
     )
     return {"ok": True, "site_id": site_id}
+
+
 @router.delete("/{site_id}")
 async def delete_site(
     site_id: str, request: Request, user: TokenPayload = Depends(require_role("admin")),
 ) -> dict:
+    """Cek+audit+hapus dibungkus SATU transaksi — kalau delete gagal
+    (masih ada device menempel), audit log "site.delete" juga ikut
+    di-rollback, tidak ada entri palsu yang bilang site terhapus padahal
+    tidak. Trigger validate_audit_log_target() (migrasi 008/010) juga
+    butuh site_id MASIH ADA saat audit di-INSERT — makanya urutannya
+    audit dulu, delete belakangan, dalam transaksi yang sama."""
     pool = get_db_pool(request)
     device_count = await pool.fetchval("SELECT count(*) FROM devices WHERE site_id = $1", site_id)
     if device_count > 0:
@@ -59,6 +93,7 @@ async def delete_site(
             f"site '{site_id}' masih punya {device_count} device terdaftar — "
             f"pindahkan atau hapus device-nya dulu sebelum menghapus site ini",
         )
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(

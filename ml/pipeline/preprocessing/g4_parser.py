@@ -41,7 +41,14 @@ def parse_gnss_csv(raw_csv: str) -> list[tuple[str, datetime, bytes]]:
                 f"4G gnss line {line_no}: bad timestamp_utc: {exc}"
             ) from exc
         raw = _decode_ubx(payload, f"4G gnss line {line_no}")
-        out.append((device_id, ts, raw))
+        # CSV labels are retained in the immutable original upload. The GNSS
+        # measurement epoch comes from the validated UBX-RXM-RAWX payload.
+        from ml.pipeline.preprocessing.gnss_rawx_time import canonical_rawx_utc
+        try:
+            observed_utc = canonical_rawx_utc(raw, ts)
+        except ValueError as exc:
+            raise InvalidCsvError(f"4G gnss line {line_no}: {exc}") from exc
+        out.append((device_id, observed_utc, raw))
     if not out:
         raise InvalidCsvError("4G gnss CSV contained a header but zero data rows")
     return out

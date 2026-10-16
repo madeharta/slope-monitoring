@@ -1,6 +1,11 @@
+// Halaman Audit Log — GET /api/v1/audit-log, dengan filter (action/actor)
+// dan paging offset-based sungguhan (2026-09-20, revisi — sebelumnya cuma
+// limit=100 tanpa filter/paging).
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+
 export default function AuditLogPage() {
   const { authFetch } = useAuth();
   const navigate = useNavigate();
@@ -11,6 +16,7 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [actorFilter, setActorFilter] = useState("");
   const [error, setError] = useState(null);
+
   useEffect(() => {
     let alive = true;
     const params = new URLSearchParams({ limit: pageSize, offset: page * pageSize });
@@ -22,13 +28,16 @@ export default function AuditLogPage() {
       .catch((e) => alive && setError(String(e)));
     return () => { alive = false; };
   }, [authFetch, page, pageSize, actionFilter, actorFilter]);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
         <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Audit Log</h1>
       </div>
+
       <div className="panel" style={{ maxWidth: 1100, margin: "0 auto", padding: 20 }}>
         <div className="table-filters">
           <input placeholder="Filter aksi (mis. login, blast)" value={actionFilter}
@@ -40,6 +49,7 @@ export default function AuditLogPage() {
           </select>
           <span className="table-total">{total} total entri</span>
         </div>
+
         {error && <div className="admin-error">{error}</div>}
         {!entries && !error && <div className="loading">Memuat…</div>}
         {entries && entries.length === 0 && <div className="sc-row">Tidak ada catatan yang cocok.</div>}
@@ -60,6 +70,7 @@ export default function AuditLogPage() {
                 ))}
               </tbody>
             </table>
+
             <div className="table-pager">
               <button className="admin-btn" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>← Sebelumnya</button>
               <span>Halaman {page + 1} dari {totalPages}</span>

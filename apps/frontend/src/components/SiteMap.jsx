@@ -57,11 +57,11 @@ export default function SiteMap({ slopes, devices = [] }) {
     const legend = L.control({ position: "bottomright" });
     legend.onAdd = () => {
       const div = L.DomUtil.create("div");
-      div.style.cssText = "background:rgba(17,18,24,.88);color:#ececf2;padding:8px 10px;border:1px solid rgba(255,255,255,.13);border-radius:6px;font:11px/1.5 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.25)";
+      div.style.cssText = "background:rgba(255,255,255,.97);color:#172a3a;padding:8px 10px;border:1px solid #dbe4ec;border-radius:6px;font:11px/1.5 system-ui,sans-serif;box-shadow:0 4px 18px rgba(24,53,71,.14)";
       div.innerHTML =
         '<div style="font-weight:700;margin-bottom:3px">Device telemetry</div>' +
         Object.values(DEVICE_STATUS).map((s) => `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.label}</div>`).join("") +
-        '<div style="margin-top:4px;color:#aeb1bc">Pin hanya muncul jika posisi GNSS/reference tersedia.</div>';
+        '<div style="margin-top:4px;color:#647c90">Pin hanya muncul jika posisi GNSS/reference tersedia.</div>';
       return div;
     };
     legend.addTo(map);

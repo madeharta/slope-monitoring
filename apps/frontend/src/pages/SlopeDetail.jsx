@@ -189,10 +189,44 @@ function CrossSection({ sensors }) {
   );
 }
 
+
+// B12_PPK_CROSSPAGE_AUTO: isolated QA outcomes, never operational displacement.
+function summarizeExperimentalPpkQa(payload) {
+  if (payload?.scope !== "EXPERIMENTAL_ENGINE_QA_ONLY" || payload?.reference_type !== "PROVISIONAL_SPP" || payload?.validation_status !== "unvalidated" || !Array.isArray(payload.rows)) {
+    throw new Error("Unexpected experimental QA contract");
+  }
+  const counts = { FIX: 0, FLOAT: 0, SINGLE: 0, OTHER: 0 };
+  for (const row of payload.rows) {
+    const q = Number(row.rtklib_quality);
+    if (q === 1) counts.FIX += 1;
+    else if (q === 2) counts.FLOAT += 1;
+    else if (q === 5) counts.SINGLE += 1;
+    else counts.OTHER += 1;
+  }
+  return { total: payload.rows.length, counts, limited: payload.rows.length >= 2000 };
+}
+
 export default function SlopeDetail() {
   const { id } = useParams();
   const { authFetch } = useAuth();
   const [siteDevices, setSiteDevices] = useState(null);
+
+  // B12_PPK_CROSSPAGE_AUTO: technical rover QA, not an operational slope measurement.
+  const [ppkQaSummary, setPpkQaSummary] = useState({state: "loading", result: null});
+  useEffect(() => {
+    if (id !== "ITB-STAGING-01") { setPpkQaSummary({state: "empty", result: null}); return; }
+    let alive = true;
+    const params = new URLSearchParams({site_id: id, rover_device_id: "ROVER-B1-02", limit: "2000"});
+    authFetch(`/api/v1/ppk/qa/solutions?${params}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`PPK QA HTTP ${response.status}`);
+        return summarizeExperimentalPpkQa(await response.json());
+      })
+      .then((result) => { if (alive) setPpkQaSummary({state: "ok", result}); })
+      .catch(() => { if (alive) setPpkQaSummary({state: "error", result: null}); });
+    return () => { alive = false; };
+  }, [id, authFetch]);
+
 
   // Daftar device di site ini (2026-09-20, baru — sebelumnya halaman
   // detail tidak pernah menampilkan device fisik apa yang ada di lokasi
@@ -431,9 +465,33 @@ export default function SlopeDetail() {
     </span>
   );
 
+  const hasDisplacementSeries = ["displacement", "disp_e", "disp_n", "disp_u"].some((q) => QD(q).length > 0);
+  const hasTiltSeries = ["tilt_x", "tilt_y"].some((q) => Q(q).length > 0);
+  const hasBlastSeries = ["ppa", "ppa_mpu9250", "ppv", "ppv_mpu9250"].some((q) => Q(q).length > 0);
+  const hasVelocitySeries = operationalReady && (derived.velocity.length > 0 || derived.acceleration.length > 0);
+
+  const formatWeather = (value, digits = 1) => {
+    if (value === null || value === undefined || value === "") return "—";
+    const n = Number(value);
+    return Number.isFinite(n) ? new Intl.NumberFormat("id-ID", { maximumFractionDigits: digits }).format(n) : "—";
+  };
+
   return (
     <div className="l2 l2detail">
       <div role="status" style={{background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43"}}>DATA BELUM TERVALIDASI LAPANGAN. Seri displacement historis sebelum persetujuan baseline tidak ditampilkan; status bukan jaminan keselamatan.</div>
+      {id === "ITB-STAGING-01" && ppkQaSummary.state === "ok" && ppkQaSummary.result?.total > 0 && (
+        <section aria-label="Experimental PPK QA summary" style={{border:"1px solid #dbe3eb",borderRadius:10,padding:"12px 16px",margin:"12px 0",background:"var(--surface,#fff)"}}>
+          <strong>PPK experimental QA · ROVER-B1-02</strong>
+          <div style={{display:"flex",flexWrap:"wrap",gap:16,marginTop:8}}>
+            <span>FIX <b>{ppkQaSummary.result.counts.FIX}</b></span>
+            <span>FLOAT <b>{ppkQaSummary.result.counts.FLOAT}</b></span>
+            <span>SINGLE <b>{ppkQaSummary.result.counts.SINGLE}</b></span>
+            <span>Total <b>{ppkQaSummary.result.total}</b></span>
+          </div>
+          <small>PROVISIONAL_SPP · unvalidated · hasil riset, bukan displacement atau dasar alarm.</small>
+          <button style={{marginLeft:12}} onClick={() => navigate("/ppk")}>Detail QA →</button>
+        </section>
+      )}
       <div className="l2head">
         <div className="crumb">
           <button onClick={() => navigate("/")}>← Overview</button><span>/</span>
@@ -536,19 +594,20 @@ export default function SlopeDetail() {
 
       {/* stat cards */}
       <div className="statcard-row">
-        <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />
-        <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="deg · saat ledakan terakhir (bukan real-time)" status={statusFor(th.tilt_x, tiltNow)} />
-        <StatCard
+        {hasDisplacementSeries && <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />}
+        {hasTiltSeries && <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="deg · saat ledakan terakhir (bukan real-time)" status={statusFor(th.tilt_x, tiltNow)} />}
+        {hasVelocitySeries && <StatCard
           label="Slope velocity"
           value={fmt(velNow, 1)}
           sub={`mm/day · derived QA only · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`}
           status={velStatus}
-        />
+        />}
         <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (bukan sensor lapangan)" status="normal" />
       </div>
 
       {/* analytics grid */}
       <div className="analytics-grid">
+        {hasDisplacementSeries && (
         <Panel title="GNSS 3D Displacement" sub="technical PPK · UNVALIDATED" right={readout(dispNow, "mm", dispStatus)}>
           <div className="panel-body">
             {roverIds.length > 1 && (
@@ -584,7 +643,9 @@ export default function SlopeDetail() {
             />
           </div>
         </Panel>
+        )}
 
+        {hasTiltSeries && (
         <Panel title="Accelerometer Tilt" sub="ADXL355 · derived · UNVERIFIED" right={readout(tiltNow, "deg", statusFor(th.tilt_x, tiltNow))}>
           <div className="panel-body">
             <Legend items={[
@@ -605,7 +666,9 @@ export default function SlopeDetail() {
             <div className="wx-chart-note">Tilt is derived from acceleration; it is not gyroscope/angular-rate data.</div>
           </div>
         </Panel>
+        )}
 
+        {hasBlastSeries && (
         <Panel title="Blast Vibration Metrics" sub="technical event features · UNVALIDATED" right={readout(last(Q("ppv")), "mm/s", "normal")}>
           <div className="panel-body">
             <Legend items={[
@@ -627,14 +690,9 @@ export default function SlopeDetail() {
             <div className="wx-chart-note">PPA/PPV are technical features from uploaded acceleration windows. No regulatory/compliance threshold or field-safety claim is applied.</div>
           </div>
         </Panel>
+        )}
 
-        {!operationalReady ? (
-          <Panel title="Time to Failure" tag="unvalidated">
-            <div className="tf-stable">
-              Suppressed while production geodetic validation is incomplete. No failure-time estimate is generated from unvalidated displacement.
-            </div>
-          </Panel>
-        ) : est ? (
+        {!operationalReady ? null : est ? (
           <Panel title="Time to Failure" tag="estimate">
             <TimeToFailure estimate={est} />
           </Panel>
@@ -644,6 +702,7 @@ export default function SlopeDetail() {
           </Panel>
         )}
 
+        {hasVelocitySeries && (
         <Panel
           title="Slope Velocity & Acceleration"
           sub={operationalReady ? "derived from GNSS resultant" : "derived QA telemetry · UNVALIDATED"}
@@ -673,6 +732,7 @@ export default function SlopeDetail() {
             />
           </div>
         </Panel>
+        )}
 
         {(weatherRain.length > 0 || weatherTemp.length > 0) && (
           <>
@@ -722,7 +782,7 @@ export default function SlopeDetail() {
             jadi panelnya selalu kosong tanpa penjelasan. Diganti jadi
             panel jujur yang menyatakan sensor apa yang BENAR-BENAR ada. */}
         <Panel title="Sensor Coverage" sub="hardware terpasang">
-          <div className="sensor-coverage">
+          <div className="sensor-coverage" style={{ padding: "12px 18px 14px" }}>
             <div className="sc-row"><span className="sc-dot sc-on" />GNSS RTK (ZED-F9P-15B) — displacement</div>
             <div className="sc-row"><span className="sc-dot sc-on" />Accelerometer (ADXL355 / MPU9250) — tilt &amp; vibrasi</div>
             <div className="sc-row"><span className="sc-dot sc-off" />Piezometer / soil moisture — tidak terpasang</div>
@@ -732,7 +792,7 @@ export default function SlopeDetail() {
 
         {/* Devices di site ini (2026-09-20, baru) */}
         <Panel title="Devices" sub={id}>
-          <div className="sensor-coverage">
+          <div className="sensor-coverage" style={{ padding: "12px 18px 14px" }}>
             {!siteDevices && <div className="sc-row">Memuat…</div>}
             {siteDevices && siteDevices.length === 0 && <div className="sc-row">Belum ada device terdaftar di site ini.</div>}
             {siteDevices && siteDevices.map((d) => (
@@ -751,16 +811,18 @@ export default function SlopeDetail() {
             sama (`series`, semua quantity, tidak difilter) — tidak perlu
             fetch tambahan. */}
         {(Q("rainfall_external").length > 0 || Q("temperature_external").length > 0) && (
+          <div data-b12="B12_SLOPE_DETAIL_WEATHER_FULL_SPAN" style={{ gridColumn: "1 / -1", minWidth: 0 }}>
           <Panel title="External Weather" sub="Open-Meteo">
-            <div className="sensor-coverage">
-              <div className="sc-row">Rainfall: <b>{last(Q("rainfall_external")) ?? "—"} mm</b></div>
-              <div className="sc-row">24h rainfall: <b>{rain24 ?? "—"} mm</b></div>
-              <div className="sc-row">72h rainfall: <b>{rain72 ?? "—"} mm</b></div>
-              <div className="sc-row">Temperature: <b>{last(Q("temperature_external")) ?? "—"} °C</b></div>
-              <div className="sc-row">Humidity: <b>{last(Q("humidity_external")) ?? "—"} %</b></div>
+            <div className="sensor-coverage" style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 22px", alignItems: "center" }} data-b12="B12_SLOPE_BOTTOM_COMPACT_V1">
+              <div className="sc-row">Rainfall: <b>{formatWeather(last(Q("rainfall_external")))} mm</b></div>
+              <div className="sc-row">24h rainfall: <b>{formatWeather(rain24)} mm</b></div>
+              <div className="sc-row">72h rainfall: <b>{formatWeather(rain72)} mm</b></div>
+              <div className="sc-row">Temperature: <b>{formatWeather(last(Q("temperature_external")))} °C</b></div>
+              <div className="sc-row">Humidity: <b>{formatWeather(last(Q("humidity_external")), 0)} %</b></div>
               <div className="sc-row" style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 4 }}>Weather data by Open-Meteo.com (CC BY 4.0)</div>
             </div>
           </Panel>
+          </div>
         )}
       </div>
       </>)}

@@ -90,7 +90,7 @@ def test_lora_rover_zero_payload_is_not_base64_decoded():
     assert parsed.position_rows[0].device_id == "ROVER-B1-02"
 
 
-def test_mixed_lora_gnss_file_rejected_when_header_claims_4g():
+def test_4g_rejects_gnss_without_rawx_time():
     payload = _ubx_b64()
     csv_text = (
         "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
@@ -104,7 +104,7 @@ def test_mixed_lora_gnss_file_rejected_when_header_claims_4g():
         "X-File-Name": "gnss_BASE-01_20261008_1445.csv",
         "X-Record-Count": "2",
     }))
-    with pytest.raises(InvalidBase64Error):
+    with pytest.raises(InvalidCsvError, match="GNSS time unverified"):
         route_and_parse(headers, csv_text)
 
 

@@ -2,17 +2,23 @@ import { useEffect, useRef } from "react";
 import * as echarts from "echarts";
 import { useStore } from "../store";
 import { getPalette } from "../theme";
+
 const TXT = "#8a8b95", GRID = "#1c1c22", RULE = "#26262d";
+
+// registry-driven lane assignment: rainfall on top, tilt (banded) at the bottom,
+// every other quantity shares the middle lane. Bands live ONLY in the tilt lane.
 function laneOf(q) {
   if (q === "rainfall") return "rain";
   if (q.startsWith("tilt")) return "tilt";
   return "mid";
 }
+
 export default function CombinedChart({ series, live, thresholds }) {
   const ref = useRef(null);
   const chartRef = useRef(null);
   const variant = useStore((s) => s.variant);
   const pal = getPalette(variant);
+
   useEffect(() => {
     const chart = echarts.init(ref.current, null, { renderer: "canvas" });
     chartRef.current = chart;
@@ -20,9 +26,12 @@ export default function CombinedChart({ series, live, thresholds }) {
     ro.observe(ref.current);
     return () => { ro.disconnect(); chart.dispose(); chartRef.current = null; };
   }, []);
+
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+
+    // merge historical + live points per quantity
     const byQ = {};
     for (const s of series) byQ[s.quantity] = { unit: s.unit, pts: s.points.map((p) => [p[0], p[1]]) };
     for (const ev of live || []) {
@@ -31,8 +40,9 @@ export default function CombinedChart({ series, live, thresholds }) {
       byQ[ev.quantity].pts.push([ev.t, ev.value]);
     }
     for (const q in byQ) byQ[q].pts.sort((a, b) => new Date(a[0]) - new Date(b[0]));
+
     const has = (lane) => Object.keys(byQ).some((q) => laneOf(q) === lane);
-    const g = {};
+    const g = {}; // grid indices per lane
     let gi = 0, top = 20;
     const grids = [], xAxes = [], yAxes = [];
     const addLane = (lane, h, label) => {
@@ -46,6 +56,7 @@ export default function CombinedChart({ series, live, thresholds }) {
         splitLine: { show: true, lineStyle: { color: GRID } },
         axisTick: { show: false },
       });
+      // yAxes added by caller
       xAxes[xAxes.length - 1]._label = label;
       top += h + 14;
       gi++;
@@ -57,11 +68,13 @@ export default function CombinedChart({ series, live, thresholds }) {
     addLane("rain", 62, "Rainfall (mm/h)");
     addLane("mid", 104, "Moisture (%) · Suction (kPa)");
     addLane("tilt", 108, "Tilt (°)");
+
     const yStyle = (extra = {}) => ({
       axisLine: { show: false }, axisTick: { show: false },
       splitLine: { show: false }, axisLabel: { color: "#7c7d87", fontSize: 9 },
       nameTextStyle: { color: TXT, fontSize: 10, align: "left" }, nameGap: 6, ...extra,
     });
+
     const yIndex = {};
     if (has("rain")) { yIndex.rain = yAxes.length; yAxes.push(yStyle({ gridIndex: g.rain, inverse: true, name: "mm/h", nameLocation: "start" })); }
     const midQs = Object.keys(byQ).filter((q) => laneOf(q) === "mid");
@@ -74,6 +87,7 @@ export default function CombinedChart({ series, live, thresholds }) {
       yIndex.tilt = yAxes.length;
       yAxes.push(yStyle({ gridIndex: g.tilt, min: 0, max: tiltMax, name: "°" }));
     }
+
     const seriesOpt = [];
     for (const q in byQ) {
       const lane = laneOf(q);
@@ -104,10 +118,13 @@ export default function CombinedChart({ series, live, thresholds }) {
           areaStyle: pal.area ? { color: lc, opacity: 0.07 } : undefined });
       }
     }
+
+    // lane labels (top-left of each grid)
     const graphic = xAxes.map((x, i) => ({
       type: "text", left: 56, top: grids[i].top - 14,
       style: { text: x._label, fill: TXT, font: "10.5px ui-sans-serif,system-ui" },
     }));
+
     chart.setOption({
       animation: false, backgroundColor: "transparent",
       grid: grids, xAxis: xAxes, yAxis: yAxes, series: seriesOpt, graphic,
@@ -115,5 +132,6 @@ export default function CombinedChart({ series, live, thresholds }) {
         textStyle: { color: "#e9e9ee", fontSize: 12 }, axisPointer: { lineStyle: { color: RULE } } },
     }, true);
   }, [series, live, thresholds, variant]);
+
   return <div ref={ref} style={{ width: "100%", height: "100%" }} />;
 }

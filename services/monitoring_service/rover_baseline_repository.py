@@ -1,5 +1,9 @@
+"""Opt-in, approved initial rover position. Absence blocks deformation output."""
 from dataclasses import dataclass
+
 from common.errors import NotFoundError
+
+
 @dataclass(frozen=True)
 class RoverBaseline:
     latitude: float
@@ -7,9 +11,12 @@ class RoverBaseline:
     altitude_m: float
     vertical_datum: str
     max_h_acc_m: float
+
+
 class RoverBaselineRepository:
     def __init__(self, pool):
         self._pool = pool
+
     async def get(self, device_id: str) -> RoverBaseline:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(

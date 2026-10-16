@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import "./ppk.css";
+import PPKQACharts from "./PPKQACharts.jsx";
 
 const fmtTime = (value) => value ? new Date(value).toLocaleString("id-ID") : "—";
 const fmtNum = (value, digits = 3) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "—";
@@ -39,15 +40,19 @@ export default function PPK() {
   const navigate = useNavigate();
   const { authFetch } = useAuth();
   const [siteId, setSiteId] = useState("ITB-STAGING-01");
-  const [roverId, setRoverId] = useState("");
-  const [limit, setLimit] = useState(100);
+  const [roverId, setRoverId] = useState("ROVER-B1-02");
+  const [limit, setLimit] = useState(500);
+  const [timeRange, setTimeRange] = useState('all');
+  const [roverOptions, setRoverOptions] = useState([]);
+  const [applied, setApplied] = useState({siteId:'ITB-STAGING-01',roverId:'ROVER-B1-02',timeRange:'all',limit:500,revision:0}); // b12-unified-filter-v1
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const initialLoadDone = useRef(false);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ limit: String(limit) });
+    setApplied(p => ({siteId:siteId.trim(),roverId,timeRange,limit,revision:p.revision+1}));
+    const params = new URLSearchParams({ limit: String(Math.min(limit, 2000)) });
     if (siteId.trim()) params.set("site_id", siteId.trim());
     if (roverId.trim()) params.set("rover_device_id", roverId.trim());
 
@@ -63,13 +68,23 @@ export default function PPK() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, limit, roverId, siteId]);
+  }, [authFetch, limit, roverId, siteId, timeRange]);
 
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let active=true;
+    const qs=new URLSearchParams({site_id:siteId.trim()});
+    authFetch(`/api/v1/ppk/qa/rovers?${qs}`).then(async r=>{
+      if(!r.ok) throw Error(`HTTP ${r.status}`);
+      return r.json();
+    }).then(body=>{if(active)setRoverOptions(Array.isArray(body.rovers)?body.rovers:[])}).catch(()=>{if(active)setRoverOptions([])});
+    return ()=>{active=false};
+  }, [authFetch, siteId]);
 
   const rows = payload?.rows || [];
   const contract = payload?.solution_contract || {};
@@ -109,12 +124,24 @@ export default function PPK() {
         </label>
         <label>
           <span>Rover ID</span>
-          <input value={roverId} onChange={(e) => setRoverId(e.target.value)} placeholder="Semua rover" />
+          <select value={roverId} onChange={(e) => setRoverId(e.target.value)} aria-label="Rover ID">
+            <option value="" disabled>Pilih rover</option>
+            {[...new Set([...roverOptions, ...(roverId ? [roverId] : [])])].map(id=><option key={id} value={id}>{id}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Time Range</span>
+          <select value={timeRange} onChange={e=>setTimeRange(e.target.value)}>
+            <option value="all">All available</option>
+            <option value="24h">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </select>
         </label>
         <label>
           <span>Limit</span>
           <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
-            {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[50, 100, 200, 500, 2000].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <button className="admin-btn ppk-refresh" disabled={loading} onClick={load}>
@@ -125,6 +152,8 @@ export default function PPK() {
 
       {error && <div className="admin-error">{error}</div>}
 
+      <PPKQACharts siteId={applied.siteId} roverId={applied.roverId} timeRange={applied.timeRange} limit={applied.limit} revision={applied.revision} />
+      <details className={`ppk-legacy-details ${rows.length === 0 ? "ppk-legacy-empty" : ""}`}><summary>Technical details / Operational PPK (separate, unvalidated)</summary>
       <section className="ppk-stat-grid" aria-label="PPK contract summary">
         <Stat label="Schema" value={payload?.schema_version || "—"} detail={contract.locked ? "locked contract" : "contract metadata unavailable"} />
         <Stat label="Validation" value={(payload?.validation_status || "unknown").toUpperCase()} detail="production claim disabled" tone="warn" />
@@ -231,6 +260,9 @@ export default function PPK() {
       </section>
       </div>
 
+      
+
+      </details>
       <details className="panel ppk-card ppk-method-note">
         <summary>Data Limitations &amp; Interpretation</summary>
         <p><b>Base-reference type dan source/receiver time-integrity tidak dipersist oleh endpoint <code>ppk.solution.v1</code> saat ini.</b> Halaman ini sengaja tidak menebak atau mengisi nilai tersebut. Evidence engine acceptance harus dibaca dari acceptance artifact, sedangkan production acceptance tetap memerlukan surveyed BASE-01 ellipsoidal coordinates.</p>

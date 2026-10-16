@@ -64,6 +64,23 @@ function Spark({ data, c, area }) {
   );
 }
 
+
+// B12_PPK_CROSSPAGE_AUTO: isolated QA outcomes, never operational displacement.
+function summarizeExperimentalPpkQa(payload) {
+  if (payload?.scope !== "EXPERIMENTAL_ENGINE_QA_ONLY" || payload?.reference_type !== "PROVISIONAL_SPP" || payload?.validation_status !== "unvalidated" || !Array.isArray(payload.rows)) {
+    throw new Error("Unexpected experimental QA contract");
+  }
+  const counts = { FIX: 0, FLOAT: 0, SINGLE: 0, OTHER: 0 };
+  for (const row of payload.rows) {
+    const q = Number(row.rtklib_quality);
+    if (q === 1) counts.FIX += 1;
+    else if (q === 2) counts.FLOAT += 1;
+    else if (q === 5) counts.SINGLE += 1;
+    else counts.OTHER += 1;
+  }
+  return { total: payload.rows.length, counts, limited: payload.rows.length >= 2000 };
+}
+
 export default function Overview() {
   const nav = useNavigate();
   const { overview, setOverview, recent, variant } = useStore((s) => ({
@@ -72,6 +89,51 @@ export default function Overview() {
   const pal = getPalette(variant);
   const { authFetch } = useAuth();
   const [warnOpen, setWarnOpen] = useState(true);
+
+  // B12_PPK_CROSSPAGE_AUTO: single QA read, no periodic PPK solver or upload.
+  const [ppkQaSummary, setPpkQaSummary] = useState({ state: "loading", result: null });
+  useEffect(() => {
+    let alive = true;
+    const params = new URLSearchParams({site_id: "ITB-STAGING-01", rover_device_id: "ROVER-B1-02", limit: "2000"});
+    authFetch(`/api/v1/ppk/qa/solutions?${params}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`PPK QA HTTP ${response.status}`);
+        return summarizeExperimentalPpkQa(await response.json());
+      })
+      .then((result) => { if (alive) setPpkQaSummary({state: "ok", result}); })
+      .catch(() => { if (alive) setPpkQaSummary({state: "error", result: null}); });
+    return () => { alive = false; };
+  }, [authFetch]);
+
+  const [ppkQa, setPpkQa] = useState({ loading: true, error: false, rows: [] });
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+    async function loadPpkQa() {
+      try {
+        const url = "/api/v1/ppk/qa/solutions?site_id=ITB-STAGING-01&rover_device_id=ROVER-B1-02&limit=500";
+        const response = await authFetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`PPK QA HTTP ${response.status}`);
+        const data = await response.json();
+        if (data?.schema_version !== "ppk.qa.solution.v1" || data?.reference_type !== "PROVISIONAL_SPP" || data?.validation_status !== "unvalidated" || data?.operational_displacement_approved !== false || !Array.isArray(data?.rows)) {
+          throw new Error("Unexpected PPK QA schema or validation flags");
+        }
+        if (alive) setPpkQa({ loading: false, error: false, rows: data.rows });
+      } catch (err) {
+        if (alive && !controller.signal.aborted) setPpkQa({ loading: false, error: true, rows: [] });
+      }
+    }
+    loadPpkQa();
+    return () => { alive = false; controller.abort(); };
+  }, [authFetch]);
+  const ppkCounts = ppkQa.rows.reduce((a, r) => {
+    const q = Number(r.rtklib_quality);
+    if (q === 1) a.fix++;
+    else if (q === 2) a.float++;
+    else if (q === 5) a.single++;
+    return a;
+  }, { fix: 0, float: 0, single: 0 });
+
 
   useEffect(() => {
     let alive = true;
@@ -234,10 +296,20 @@ export default function Overview() {
           <div className="wcard-b"><Spark data={vibArr} c={pal.spark} area={pal.area} /></div>
         </div>
         <div className="wcard ppk-overview-card">
-          <div className="wcard-h"><h3>PPK technical results</h3><span className="wgic">ⓘ</span></div>
+          <div className="wcard-h"><h3>PPK engine QA · ROVER-B1-02</h3><span className="wgic" title="Experimental / unvalidated">ⓘ</span></div>
           <div className="wcard-b">
-            <div className="ppk-overview-copy">PPK output is UNVALIDATED for production displacement. View the locked solution contract, RTKLIB quality, and reproducibility provenance without changing operational alarm state.</div>
-            <button className="ppk-overview-link" onClick={() => nav("/ppk")}>Open PPK QA →</button>
+            {ppkQaSummary.state === "loading" && <div className="ppk-overview-copy">Memuat hasil QA tersimpan…</div>}
+            {ppkQaSummary.state === "error" && <div className="ppk-overview-copy">Hasil PPK QA belum dapat diakses. Data operasional tidak terpengaruh.</div>}
+            {ppkQaSummary.state === "ok" && ppkQaSummary.result?.total === 0 && <div className="ppk-overview-copy">Belum ada solusi eksperimental untuk rover ini.</div>}
+            {ppkQaSummary.state === "ok" && ppkQaSummary.result?.total > 0 && (
+              <>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginBottom:8}}>
+                  {(["FIX","FLOAT","SINGLE"]).map((label) => <div key={label} style={{border:"1px solid var(--border, #dbe3eb)",borderRadius:6,padding:"7px 5px",textAlign:"center"}}><small>{label}</small><div style={{fontWeight:750,fontSize:18}}>{ppkQaSummary.result.counts[label]}</div></div>)}
+                </div>
+                <div className="ppk-overview-copy">{ppkQaSummary.result.total} solusi QA · PROVISIONAL_SPP · unvalidated{ppkQaSummary.result.limited ? " · terbatas 2000 baris" : ""}. Bukan displacement / alarm operasional.</div>
+              </>
+            )}
+            <button className="ppk-overview-link" onClick={() => nav("/ppk")}>Detail PPK QA →</button>
           </div>
         </div>
         <div className="wcard">

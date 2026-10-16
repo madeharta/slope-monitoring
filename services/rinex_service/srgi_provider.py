@@ -1,13 +1,21 @@
 from __future__ import annotations
+
 import os
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlparse, urlunparse
+
 import httpx
+
 from services.rinex_service.cache import CachedRINEXArtifact, RINEXCache, RINEXCacheError
+
+
 class RINEXDownloadError(RuntimeError):
     pass
+
+
 class SRGIRINEXProvider:
     ALLOWED_HOST = "srgi.big.go.id"
+
     def __init__(
         self,
         cache: RINEXCache,
@@ -20,6 +28,7 @@ class SRGIRINEXProvider:
         self.timeout_s = timeout_s or float(os.getenv("RINEX_DOWNLOAD_TIMEOUT_S", "60"))
         self.max_bytes = max_bytes or int(os.getenv("RINEX_DOWNLOAD_MAX_BYTES", str(250 * 1024 * 1024)))
         self._client = client
+
     def fetch(
         self,
         url: str,
@@ -86,6 +95,7 @@ class SRGIRINEXProvider:
         finally:
             if owns_client:
                 client.close()
+
     @classmethod
     def _validate_url(cls, value: str) -> str:
         parsed = urlparse(value)
@@ -100,14 +110,18 @@ class SRGIRINEXProvider:
         if parsed.fragment:
             parsed = parsed._replace(fragment="")
         return urlunparse(parsed)
+
     @staticmethod
     def _redacted_source_url(value: str) -> str:
+        # Query strings can carry temporary tokens. Never persist them in cache metadata.
         parsed = urlparse(value)
         return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
     @staticmethod
     def _looks_like_html(content: bytes) -> bool:
         head = content[:512].lstrip().lower()
         return head.startswith(b"<!doctype html") or head.startswith(b"<html")
+
     @staticmethod
     def _filename(response: httpx.Response, url: str) -> str:
         content_disposition = response.headers.get("content-disposition", "")

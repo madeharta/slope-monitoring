@@ -20,11 +20,10 @@ def test_parse_gnss_csv_rejects_non_ubx_payload():
     csv_text = f"device_id,timestamp_utc,gnss_raw_payload_base64\nBASE-01,2026-09-15 09:24:00,{bad_payload}\n"
     with pytest.raises(InvalidBase64Error):
         parse_gnss_csv(csv_text)
-def test_parse_gnss_csv_accepts_ubx_sync_bytes():
+def test_parse_gnss_csv_rejects_ubx_without_rawx_time():
     csv_text = f"device_id,timestamp_utc,gnss_raw_payload_base64\nBASE-01,2026-09-15 09:24:00,{_ubx_b64()}\n"
-    rows = parse_gnss_csv(csv_text)
-    assert len(rows) == 1
-    assert rows[0][2].startswith(b"\xb5\x62")
+    with pytest.raises(InvalidCsvError, match="GNSS time unverified"):
+        parse_gnss_csv(csv_text)
 def test_parse_lora_combined_gnss():
     csv_text = (
         "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
