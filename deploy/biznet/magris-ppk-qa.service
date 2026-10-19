@@ -1,0 +1,20 @@
+[Unit]
+Description=MAGRIS PPK experimental QA-only incremental scheduler
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=oneshot
+User=magris-ppk-qa
+Group=magris-ppk-qa
+WorkingDirectory=/opt/magris/current
+EnvironmentFile=/etc/magris/ppk-qa.env
+ExecStart=/usr/bin/flock -n /run/lock/magris-ppk-qa.lock /opt/magris/venv/bin/python /opt/magris/current/scripts/ppk_qa_scheduler.py --apply --grace-minutes 20 --backfill-hours 3 --timeout-seconds 600
+TimeoutStartSec=2200
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/cache/magris-ppk-qa /run/lock
+UMask=0077
+[Install]
+WantedBy=multi-user.target

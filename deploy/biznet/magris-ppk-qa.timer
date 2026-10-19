@@ -1,0 +1,9 @@
+[Unit]
+Description=MAGRIS QA-only scheduler every hour (disabled until staging smoke PASS)
+[Timer]
+OnCalendar=*-*-* *:25:00 UTC
+Persistent=false
+AccuracySec=1min
+Unit=magris-ppk-qa.service
+[Install]
+WantedBy=timers.target
