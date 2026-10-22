@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import PanelChart from "../components/PanelChart.jsx";
+import { estimateAccelVelocity } from "./accelVelocity.js";
 import { getPalette } from "../theme";
 import { useStore } from "../store";
 import {
@@ -352,6 +353,8 @@ export default function SensorMonitoring() {
 
   const adxlStats = useMemo(() => waveformStats(wave, "adxl355"), [wave]);
   const mpuStats = useMemo(() => waveformStats(wave, "mpu9250"), [wave]);
+  const adxlVelocity = useMemo(() => estimateAccelVelocity(wave, "adxl355", waveMeta || {}), [wave, waveMeta]);
+  const mpuVelocity = useMemo(() => estimateAccelVelocity(wave, "mpu9250", waveMeta || {}), [wave, waveMeta]);
 
   const latest = stats.latest;
   const event = events.find((e) => e.source_file === eventFile) || null;
@@ -1139,6 +1142,40 @@ export default function SensorMonitoring() {
                 </div>
               )}
             </div>
+          </div>
+          <p className="sensor-transport-note">
+            Estimated velocity: EXPERIMENTAL / UNVALIDATED — relative to first-sample zero velocity.
+            Initial 10% of samples assumed stationary for baseline/gravity offset correction.
+            Orientation changes, drift and filter calibration are NOT corrected. Not slope movement velocity, PPV or operational data.
+          </p>
+          <div className="sensor-grid sensor-wave-grid">
+            {[
+              { title: "ADXL355 estimated velocity XYZ", value: adxlVelocity },
+              { title: "MPU9250 estimated velocity XYZ", value: mpuVelocity },
+            ].map(({ title, value }) => (
+              <div className="sensor-wave-card" key={title}>
+                <h3>{title} — EXPERIMENTAL / UNVALIDATED</h3>
+                {value.rows.length > 0 && (
+                  <p className="sensor-transport-note">
+                    {new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(value.rows.find(r => r.vx_mm_s != null).timestamp_utc))} WIB
+                    {" · "}{value.rows.filter(r => r.vx_mm_s != null).length} samples
+                    {" · "}{value.valid_segments ?? 1} valid segment(s)
+                    {" · "}{value.gaps ?? 0} gap(s)
+                    {" · "}X-axis: elapsed time
+                  </p>
+                )}
+                {value.rows.length ? (
+                  <PanelChart height={330} axisFontSize={11} xTimeMode="elapsed" left={{ name: "mm/s" }}
+                    series={[
+                      { name: "Vx", data: pts(value.rows, "vx_mm_s"), color: pal.line.ppa || pal.lineDefault, width: 1.5 },
+                      { name: "Vy", data: pts(value.rows, "vy_mm_s"), color: pal.line.tilt_x || pal.lineDefault, width: 1.3, dash: "dashed" },
+                      { name: "Vz", data: pts(value.rows, "vz_mm_s"), color: pal.line.displacement || pal.lineDefault, width: 1.3, dash: "dotted" },
+                    ]} />
+                ) : (
+                  <div className="sensor-empty"><strong>Velocity unavailable</strong><span>{value.reason}</span></div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
       )}
