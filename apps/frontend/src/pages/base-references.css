@@ -1,0 +1,28 @@
+.base-ref-page{max-width:1500px;margin:0 auto;padding:20px 24px 48px;color:var(--ink);}
+.base-ref-heading{display:flex;gap:20px;align-items:center;margin-bottom:16px}.base-ref-heading h1{font-size:20px;margin:0 0 4px}.base-ref-heading p,.base-ref-caption{color:var(--ink-3);font-size:12px;line-height:1.6}.base-ref-heading a{color:var(--ink)}
+.base-ref-alert{border:1px solid #b88b43;background:#35240c;color:#ffe7ac;padding:14px;border-radius:10px;display:grid;gap:5px;margin-bottom:16px;font-size:12px;line-height:1.55}
+.base-ref-panel{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:18px;margin-bottom:16px;min-width:0}.base-ref-panel h2{font-size:15px;margin:0 0 12px}
+.base-ref-picker,.base-ref-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:end}.base-ref-picker label,.base-ref-form label{display:flex;flex-direction:column;gap:6px;color:var(--ink-3);font-size:12px}.base-ref-picker input,.base-ref-form input,.base-ref-form select,.base-ref-form textarea{box-sizing:border-box;width:100%;padding:10px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:8px;font:inherit;min-height:38px}.base-ref-picker button,.base-ref-form button{padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:#f4f4f5;color:#111113;cursor:pointer;font-weight:600}.base-ref-picker button:disabled,.base-ref-form button:disabled{opacity:.55;cursor:not-allowed}.base-ref-wide{grid-column:1/-1}.base-ref-error{color:#fba5a5}.base-ref-success{color:#8ce0b7}
+.base-ref-table-wrap{overflow-x:auto}.base-ref-table-wrap table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}.base-ref-table-wrap th,.base-ref-table-wrap td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left}.base-ref-table-wrap th{color:var(--ink-3);font-weight:600}.base-ref-table-wrap td:last-child{white-space:normal;min-width:180px;overflow-wrap:anywhere}
+@media(max-width:850px){.base-ref-picker,.base-ref-form{grid-template-columns:1fr 1fr}.base-ref-page{padding:14px}.base-ref-heading{flex-wrap:wrap}}
+@media(max-width:520px){.base-ref-picker,.base-ref-form{grid-template-columns:1fr}}
+
+.base-ref-picker{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end}
+.base-ref-picker select{box-sizing:border-box;width:100%;min-height:42px;padding:10px;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:8px;font:inherit}
+.base-ref-picker-actions{display:flex;align-items:stretch;gap:10px;flex-wrap:nowrap}
+.base-ref-picker-actions button{white-space:nowrap;min-height:42px}
+.base-ref-help{font-size:11px;line-height:1.45;color:var(--ink-3)}
+@media(max-width:900px){.base-ref-picker{grid-template-columns:1fr 1fr}.base-ref-picker-actions{grid-column:1/-1}}
+@media(max-width:520px){.base-ref-picker{grid-template-columns:1fr}.base-ref-picker-actions{grid-column:auto;flex-wrap:wrap}}
+
+/* B16 UI: stable 3-column grid and consistent row heights */
+.base-ref-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.base-ref-form>label{min-width:0;align-self:start;display:flex;flex-direction:column;gap:8px}
+.base-ref-form>label input,.base-ref-form>label select{height:44px;min-height:44px}
+.base-ref-form>label textarea{min-height:100px;resize:vertical}
+.base-ref-form .base-ref-help{display:block;margin-top:4px;min-height:0;line-height:1.5}
+.base-ref-form>.base-ref-wide{grid-column:1/-1}
+.base-ref-picker{align-items:end}
+.base-ref-picker-actions{align-self:end}
+@media(max-width:900px){.base-ref-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.base-ref-form{grid-template-columns:1fr}}

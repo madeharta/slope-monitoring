@@ -101,7 +101,7 @@ async def list_ppk_solutions(
 @router.get('/qa/rovers')
 async def list_experimental_ppk_qa_rovers(
     request: Request,
-    user: TokenPayload = Depends(require_role('viewer')),
+    user: TokenPayload = Depends(require_role("viewer")),
     site_id: str = Query(default='ITB-STAGING-01'),
 ) -> dict:
     pool = get_db_pool(request)
@@ -115,50 +115,130 @@ async def list_experimental_ppk_qa_rovers(
         return {'availability_status': 'schema_unavailable', 'rovers': []}
     return {'availability_status': 'available', 'rovers': [r['rover_device_id'] for r in values]}
 
+# B13_5_PAGINATION_V1 — experimental QA, independent from operational PPK.
 @router.get('/qa/solutions')
 async def list_experimental_ppk_qa_solutions(
     request: Request,
-    user: TokenPayload = Depends(require_role('viewer')),
+    user: TokenPayload = Depends(require_role("viewer")),
     site_id: str = Query(default='ITB-STAGING-01'),
-    rover_device_id: str = Query(default='ROVER-B1-02'),
+    rover_device_id: str | None = Query(default='ROVER-B1-02'),
     limit: int = Query(default=500, ge=1, le=2000),
     time_range: str = Query(default='all', pattern='^(all|24h|7d|30d)$'),
+    cursor: str | None = None,
 ) -> dict:
-    """Isolated technical QA. Never include operational displacement columns."""
-    # GPS seconds relative to 1980-01-06, 18 s GPS-UTC at this 2026 QA epoch.
-    # Avoid timezone-naive UTC comparisons. All QA records remain unvalidated.
-    from datetime import datetime, timezone
+    """Read-only experimental QA. Cursor is a deterministic epoch+id position.
+
+    Existing fields are preserved for current dashboard clients. Observation
+    UTC is emitted only within a documented GPS/UTC offset interval.
+    """
+    import base64
+    import binascii
+    import json
+    import math
+    from datetime import datetime, timedelta, timezone
+    from fastapi import HTTPException
+
+    def parse_cursor(token):
+        if token is None:
+            return None
+        if not isinstance(token, str) or len(token) > 256:
+            raise HTTPException(status_code=422, detail="Invalid QA pagination cursor")
+        try:
+            raw = base64.urlsafe_b64decode(token + '=' * (-len(token) % 4))
+            value = json.loads(raw)
+            if (not isinstance(value, list) or len(value) != 3
+                    or type(value[0]) is not int or value[0] < 0
+                    or type(value[1]) not in (int, float)
+                    or not math.isfinite(value[1]) or not 0 <= value[1] < 604800
+                    or type(value[2]) is not int or value[2] < 0):
+                raise ValueError('invalid cursor values')
+            return value
+        except (ValueError, TypeError, json.JSONDecodeError, binascii.Error) as exc:
+            raise HTTPException(status_code=422, detail='Invalid QA pagination cursor') from exc
+
+    def encode_cursor(row):
+        encoded = json.dumps([row['gps_week'], row['gps_tow_s'], row['id']], separators=(',', ':')).encode()
+        return base64.urlsafe_b64encode(encoded).decode().rstrip('=')
+
+    gps_epoch = datetime(1980, 1, 6, tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
+    # At the experimental 2026 epoch GPS-UTC is 18 seconds. Avoid pretending
+    # that this constant works before 2017 or indefinitely in the future.
+    valid_start = datetime(2017, 1, 1, tzinfo=timezone.utc)
+    valid_until = datetime(2027, 1, 1, tzinfo=timezone.utc)
     cutoff = None
     if time_range != 'all':
-        delta = {'24h':86400,'7d':604800,'30d':2592000}[time_range]
-        cutoff = (now - datetime(1980,1,6,tzinfo=timezone.utc)).total_seconds() + 18 - delta
+        delta = {'24h': 86400, '7d': 604800, '30d': 2592000}[time_range]
+        cutoff = (now - gps_epoch).total_seconds() + 18 - delta
+
+    offset = parse_cursor(cursor)
     pool = get_db_pool(request)
     availability_status = 'available'
     try:
         async with pool.acquire() as conn:
-            rows = await conn.fetch('''
-                SELECT source_pos_sha256,gps_week,gps_tow_s,latitude_deg,longitude_deg,
+            rows = await conn.fetch("""
+                SELECT id,site_id,base_device_id,rover_device_id,source_pos_sha256,
+                       gps_week,gps_tow_s,latitude_deg,longitude_deg,
                        ellipsoidal_height_m,rtklib_quality,satellite_count,
-                       sdn_m,sde_m,sdu_m,sdne_m,sdeu_m,sdun_m,age_s,ratio
+                       sdn_m,sde_m,sdu_m,sdne_m,sdeu_m,sdun_m,age_s,ratio,
+                       reference_type,validation_status,schema_version,created_at
                 FROM public.ppk_qa_experimental_solutions
                 WHERE site_id=$1
                   AND ($2::text IS NULL OR rover_device_id=$2)
-                  AND ($4::double precision IS NULL OR (gps_week::double precision*604800.0+gps_tow_s)>=$4)
-                ORDER BY gps_week ASC,gps_tow_s ASC LIMIT $3
-            ''', site_id, rover_device_id, limit, cutoff)
+                  AND ($3::double precision IS NULL OR
+                       (gps_week::double precision*604800.0+gps_tow_s)>=$3)
+                  AND ($4::int IS NULL OR
+                       (gps_week,gps_tow_s,id) > ($4::int,$5::double precision,$6::bigint))
+                ORDER BY gps_week ASC,gps_tow_s ASC,id ASC
+                LIMIT $7
+            """, site_id, rover_device_id, cutoff,
+                offset[0] if offset else None,
+                offset[1] if offset else None,
+                offset[2] if offset else None,
+                limit + 1)
     except Exception as exc:
         if not _qa_schema_missing(exc):
             raise
         availability_status = 'schema_unavailable'
         rows = []
+
+    has_more = len(rows) > limit
+    selected = rows[:limit]
+    results = []
+    for r in selected:
+        item = dict(r)
+        item.pop('id', None)  # internal pagination tie-breaker
+        gps_time = gps_epoch + timedelta(weeks=r['gps_week'], seconds=r['gps_tow_s'])
+        derived_utc = gps_time - timedelta(seconds=18)
+        if valid_start <= derived_utc < valid_until:
+            item['observation_time_utc'] = derived_utc.isoformat()
+            item['gps_utc_offset_s'] = 18
+            item['time_conversion_status'] = 'GPS_UTC_OFFSET_18S_EPOCH_LIMITED'
+        else:
+            item['observation_time_utc'] = None
+            item['gps_utc_offset_s'] = None
+            item['time_conversion_status'] = 'OFFSET_UNVERIFIED'
+        item['created_at'] = r['created_at'].isoformat() if r['created_at'] else None
+        # Storage v1 has no reference version or deterministic job FK.
+        item['base_reference_version'] = None
+        item['processing_job_id'] = None
+        results.append(item)
     return {
         'availability_status': availability_status,
-        'schema_version':'ppk.qa.solution.v1',
-        'scope':'EXPERIMENTAL_ENGINE_QA_ONLY',
-        'applied_filters':{'site_id':site_id,'rover_device_id':rover_device_id,'time_range':time_range,'limit':limit},
-        'reference_type':'PROVISIONAL_SPP',
-        'validation_status':'unvalidated',
-        'operational_displacement_approved':False,
-        'rows':[dict(r) for r in rows],
+        'schema_version': 'ppk.qa.solution.v1',
+        'api_contract_version': 'ppk.qa.api.v1',
+        'scope': 'EXPERIMENTAL_ENGINE_QA_ONLY',
+        'applied_filters': {
+            'site_id': site_id, 'rover_device_id': rover_device_id,
+            'time_range': time_range, 'limit': limit,
+        },
+        'reference_type': 'PROVISIONAL_SPP',
+        'validation_status': 'unvalidated',
+        'operational_displacement_approved': False,
+        'rows': results,
+        'pagination': {
+            'has_more': has_more,
+            'next_cursor': encode_cursor(selected[-1]) if has_more and selected else None,
+            'returned': len(results),
+        },
     }

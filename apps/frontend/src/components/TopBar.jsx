@@ -58,6 +58,7 @@ export default function TopBar() {
     { key: "alarms", label: "Alarms", icon: I.bell, onClick: () => setNav("alarms") },
     { key: "uploads", label: "Uploads", icon: I.map, onClick: () => nav("/uploads") },
     { key: "devices", label: "Devices", icon: I.dash, onClick: () => nav("/devices") },
+    { key: "weather", label: "Weather Station", icon: I.chart, onClick: () => { nav("/weather"); setNav("weather"); } },
   ];
 
   useEffect(() => {
@@ -80,12 +81,22 @@ export default function TopBar() {
     setMobileNavOpen(false);
   };
 
-  const isItemActive = (item) => (
-    navKey === item.key ||
-    (item.key === "analytics" && location.pathname.startsWith("/sensors")) ||
-    (item.key === "ppk" && location.pathname.startsWith("/ppk")) ||
-    (item.key === "blast" && location.pathname.startsWith("/blast"))
-  );
+  const isItemActive = (item) => {
+    const path = location.pathname;
+    const routes = {
+      map: path === "/",
+      analytics: path === "/sensors" || path.startsWith("/sensors/"),
+      blast: path === "/blast" || path.startsWith("/blast/"),
+      uploads: path === "/uploads" || path.startsWith("/uploads/"),
+      devices: path === "/devices" || path.startsWith("/devices/"),
+      weather: path === "/weather" || path.startsWith("/weather/"),
+      alarms: path === "/" && navKey === "alarms",
+    };
+    if (item.key === "map" && path === "/" && navKey === "alarms") {
+      return false;
+    }
+    return routes[item.key] ?? false;
+  };
   return (
     <header className={"topbar" + (isMapRoute ? "" : " topbar--solid")}>
       <div className="brand">
@@ -95,6 +106,7 @@ export default function TopBar() {
       <nav className="topnav" aria-label="Primary">
         {items.map((it) => (
           <button key={it.key} className={"nav-item" + (isItemActive(it) ? " on" : "")}
+            style={it.key === "weather" ? { color: "#b42318", fontWeight: 700, ...(isItemActive(it) ? { backgroundColor: "rgba(180, 35, 24, 0.09)" } : {}) } : undefined}
             aria-current={isItemActive(it) ? "page" : "false"} onClick={it.onClick}>
             {it.icon}<span>{it.label}</span>
           </button>
@@ -176,6 +188,9 @@ export default function TopBar() {
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/devices"); }}>
                 Devices
               </button>
+              <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/base-references"); }}>
+                BASE Reference Management
+              </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/uploads"); }}>
                 Uploads
               </button>
@@ -221,6 +236,7 @@ export default function TopBar() {
                 key={it.key}
                 type="button"
                 className={"mobile-nav-item" + (isItemActive(it) ? " on" : "")}
+                style={it.key === "weather" ? { color: "#b42318", fontWeight: 700, ...(isItemActive(it) ? { backgroundColor: "rgba(180, 35, 24, 0.09)" } : {}) } : undefined}
                 aria-current={isItemActive(it) ? "page" : "false"}
                 onClick={() => runMobileNav(it)}
               >
