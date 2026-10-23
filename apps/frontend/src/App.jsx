@@ -18,7 +18,6 @@ import PPK from "./pages/PPK.jsx";
 import BaseReferences from "./pages/BaseReferences.jsx";
 import BlastControl from "./pages/BlastControl.jsx";
 import SensorMonitoring from "./pages/SensorMonitoring.jsx";
-import WeatherStation from "./pages/WeatherStation.jsx";
 import RequireAuth from "./context/RequireAuth.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 function AuthenticatedApp() {
@@ -48,8 +47,6 @@ function AuthenticatedApp() {
           <Route path="/base-references" element={<BaseReferences />} />
             <Route path="/blast" element={<BlastControl />} />
             <Route path="/sensors" element={<SensorMonitoring />} />
-            <Route path="/weather" element={<WeatherStation />} />
-            <Route path="/weather/:metricSlug" element={<WeatherStation />} />
         </Routes>
       </div>
       <TopBar />
