@@ -1,0 +1,62 @@
+.weather-page{padding:28px 34px 70px;color:#253c4e;max-width:1700px;margin:0 auto;min-height:100vh}.weather-heading{display:flex;justify-content:space-between;gap:20px;align-items:start}.weather-heading h1{font-size:30px;margin:4px 0 7px}.weather-heading p{margin:0;color:#637d91}.weather-eyebrow{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700}.weather-mock-badge{display:inline-flex;background:#fff2de;color:#8b510c;border:1px solid #e9bb72;border-radius:10px;padding:10px 13px;white-space:nowrap;font-size:12px}.weather-warning{border:1px solid #e8c28a;border-radius:10px;background:#fff9ec;color:#76501c;padding:13px 16px;margin:19px 0;font-size:13px}.weather-station-meta{display:flex;flex-wrap:wrap;gap:13px 25px;background:white;border:1px solid #d9e4ec;border-radius:12px;padding:17px;font-size:13px}.weather-tabs{display:flex;gap:8px;margin:20px 0}.weather-tabs button{border:1px solid #cbdbe5;color:#526c80;background:#fff;border-radius:9px;padding:11px 17px;cursor:pointer;font-weight:650}.weather-tabs button.selected{background:#dbeaf2;color:#135e79;border-color:#9ac3d6}.weather-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.weather-metric,.weather-panel{background:#fff;border:1px solid #d7e3eb;border-radius:13px;padding:19px}.weather-metric>span{font-size:13px;color:#637d91}.weather-metric strong{display:block;font-size:30px;margin:13px 0}.weather-metric small{font-size:14px;font-weight:500;color:#6d8090}.weather-metric p,.weather-panel p{font-size:12px;color:#688092}.weather-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.weather-panel h2{font-size:17px;margin:0 0 9px}.weather-chart{height:290px;width:100%;min-width:0}.weather-controls{display:flex;flex-wrap:wrap;gap:12px;margin:5px 0 20px}.weather-controls label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:650;color:#526b7b}.weather-controls input,.weather-controls select{padding:9px 10px;border:1px solid #cbdbe5;border-radius:7px;background:#fff;color:#243f4d}.weather-empty{padding:60px 16px;text-align:center;color:#617989}.weather-table-top,.weather-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px}.weather-table-top button,.weather-pagination button{padding:8px 13px;border:1px solid #cbdbe5;border-radius:7px;background:#f7fafc;color:#38596b;cursor:pointer}.weather-pagination button:disabled{opacity:.5;cursor:default}.weather-table-scroll{overflow:auto}.weather-table-scroll table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap;text-align:left}.weather-table-scroll th,.weather-table-scroll td{padding:12px;border-bottom:1px solid #e2eaf0}.weather-table-scroll th{background:#f1f6f8;color:#4f697d;position:sticky;top:0}.weather-pagination{justify-content:flex-end;margin-top:14px}.weather-footnote{color:#678091;font-size:12px;margin-top:20px}@media(max-width:900px){.weather-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.weather-panels{grid-template-columns:1fr}.weather-heading{flex-direction:column}.weather-mock-badge{white-space:normal}}@media(max-width:540px){.weather-page{padding:18px 13px 45px}.weather-metrics{grid-template-columns:1fr 1fr;gap:8px}.weather-metric{padding:12px}.weather-metric strong{font-size:23px}.weather-tabs{flex-wrap:wrap}}
+/* WeatherLink-inspired independent bulletin grid; all panels use fixture data only. */
+.weather-bulletin{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:stretch}.weather-bulletin .weather-panel{min-width:0;padding:16px}.weather-bulletin .weather-panel h2{font-size:15px;color:#3f596d}.weather-bulletin .weather-chart{min-width:0}.weather-panel-wide{grid-column:span 3}.weather-mini-note{font-size:11px!important;line-height:1.5;margin:4px 0;color:#637e90}.weather-readout{display:flex;flex-direction:column;justify-content:center;min-height:170px;text-align:center}.weather-readout strong{font-size:38px;color:#284459}.weather-readout small{font-size:15px;color:#6c8290}.weather-bulletin-note{grid-column:1/-1;color:#697f8e;font-size:12px;margin:0 0 6px}@media(max-width:1250px){.weather-bulletin{grid-template-columns:repeat(2,minmax(0,1fr))}.weather-panel-wide{grid-column:span 2}}@media(max-width:620px){.weather-bulletin{grid-template-columns:1fr}.weather-panel-wide{grid-column:span 1}}
+
+/* Batch 15.2: MAGRIS-original analytic cards, not a WeatherLink UI reproduction. */
+.weather-bulletin{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.weather-bulletin .weather-panel{min-height:295px;border-radius:16px;border-color:#d8e3ec;box-shadow:0 3px 10px rgba(30,59,80,.035);background:linear-gradient(155deg,#fff 70%,#f7fafd)}
+.weather-bulletin .weather-panel:nth-child(4n+1){border-top:3px solid #dd705d}
+.weather-bulletin .weather-panel:nth-child(4n+2){border-top:3px solid #3c8eae}
+.weather-bulletin .weather-panel:nth-child(4n+3){border-top:3px solid #6984a7}
+.weather-bulletin .weather-panel:nth-child(4n){border-top:3px solid #4ca58a}
+.weather-bulletin .weather-panel h2{letter-spacing:.1px;margin-bottom:15px}
+.weather-panel-wide{grid-column:auto}
+.weather-trend-value{font-size:35px;font-weight:750;letter-spacing:-1px;color:#243f53;margin:5px 0 2px}
+.weather-trend-value small{font-size:15px;font-weight:500;letter-spacing:0;color:#6d8294}
+.weather-derived-tags{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px}
+.weather-derived-tags span{font-size:10px;background:#eef5f8;color:#49677b;border-radius:6px;padding:4px 6px}
+.weather-bulletin-note{grid-column:1/-1}
+@media(max-width:1399px){.weather-bulletin{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:699px){.weather-bulletin{grid-template-columns:1fr}.weather-bulletin .weather-panel{min-height:260px}}
+
+/* Batch 15.4: selectable balanced cards, native weather direction marks and stacked details. */
+.weather-bulletin .weather-panel.weather-clickable{display:flex;flex-direction:column;min-height:330px;cursor:pointer;transition:border-color .18s,box-shadow .18s,transform .18s}
+.weather-bulletin .weather-panel.weather-clickable:hover{box-shadow:0 9px 24px rgba(35,69,94,.12);transform:translateY(-2px)}
+.weather-bulletin .weather-panel.weather-clickable:focus-visible{outline:3px solid #2489b5;outline-offset:3px}
+.weather-bulletin .weather-panel h2{display:flex;justify-content:space-between;align-items:start;gap:6px;min-height:21px;margin-bottom:15px}
+.weather-card-action{font-size:11px;white-space:nowrap;color:#53758e;font-weight:600;opacity:.8}
+.weather-bulletin .weather-panel .weather-mini-note:last-child{margin-top:auto}
+.weather-bulletin .weather-chart{flex-shrink:0}
+.weather-wind-dial{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.weather-wind-dial-ring{width:min(210px,100%);aspect-ratio:1;border:9px solid #e8f0f5;border-radius:50%;position:relative;background:radial-gradient(circle,#fff 0 46%,#f3f8fc 48%,#fff 55%);box-shadow:inset 0 0 0 1px #cddce7}
+.weather-wind-dial-ring>span{position:absolute;font-size:12px;color:#4f7188;font-weight:700}.weather-wind-dial-ring>span:nth-child(1){top:5px;left:50%;transform:translateX(-50%)}.weather-wind-dial-ring>span:nth-child(2){right:8px;top:50%;transform:translateY(-50%)}.weather-wind-dial-ring>span:nth-child(3){bottom:5px;left:50%;transform:translateX(-50%)}.weather-wind-dial-ring>span:nth-child(4){left:8px;top:50%;transform:translateY(-50%)}
+.weather-wind-dial-pointer{position:absolute;left:50%;top:50%;height:72%;width:14px;display:flex;align-items:flex-start;justify-content:center;transform-origin:center center}
+.weather-wind-dial-pointer>div{width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-bottom:65px solid #438eb2;filter:drop-shadow(0 2px 2px rgba(30,72,98,.15))}
+.weather-wind-dial-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#294e65;width:17px;height:17px;border:4px solid white;border-radius:50%;box-shadow:0 0 0 1px #c6dce9}
+.weather-wind-bars{display:flex;flex-direction:column;gap:9px;padding:5px 4px;flex:1;justify-content:center}.weather-wind-bar-row{display:grid;grid-template-columns:24px 1fr 23px;align-items:center;gap:8px;font-size:11px;color:#587389}.weather-wind-bar-row small{text-align:right;color:#547383}.weather-wind-bar-track{height:12px;border-radius:4px;background:#eef4f7;overflow:hidden}.weather-wind-bar-track>div{height:100%;background:linear-gradient(90deg,#8ec6bf,#409e8b);border-radius:4px}
+.weather-detail-stack{display:grid;gap:16px}.weather-detail-stack .weather-panel{min-width:0}.weather-detail-unit{color:#5f8299;border:1px solid #dae7ef;padding:5px 12px;border-radius:8px;font-size:12px}
+@media(max-width:1399px){.weather-bulletin .weather-panel.weather-clickable{min-height:290px}}@media(max-width:699px){.weather-bulletin .weather-panel.weather-clickable{min-height:265px}.weather-detail-stack .weather-panel{padding:12px}}
+
+/* Batch 15.5: route-first master/detail navigation (no dashboard/detail tabs). */
+.weather-detail-nav{display:flex;align-items:center;flex-wrap:wrap;gap:15px;margin:20px 0 16px}.weather-detail-nav button,.weather-empty button{padding:10px 15px;border:1px solid #a9c9da;border-radius:9px;background:#fff;color:#185e80;font-weight:650;cursor:pointer}.weather-detail-nav button:hover,.weather-empty button:hover{background:#ecf5fa}.weather-detail-nav button:focus-visible,.weather-empty button:focus-visible{outline:3px solid #2489b5;outline-offset:2px}.weather-detail-nav span{color:#647f92;font-size:12px}
+
+/* Batch 15.6: consistent MAGRIS summary treatments for rain and barometer. */
+.weather-rain-summary{display:flex;flex:1;flex-direction:column;min-width:0}
+.weather-rain-summary .weather-trend-value{margin:5px 0 26px}
+.weather-rain-tracks{display:grid;gap:18px;margin:0 0 18px}
+.weather-rain-track-label{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#58758a;font-size:12px;margin-bottom:7px}
+.weather-rain-track-label strong{color:#29495c;font-size:12px;font-variant-numeric:tabular-nums}
+.weather-rain-track{height:13px;border-radius:8px;background:#eaf1f5;overflow:hidden}
+.weather-rain-track>div{height:100%;border-radius:8px;transition:width .2s ease}
+.weather-rain-summary>.weather-mini-note{margin-top:auto}
+
+/* Batch 15.7: breathing room below station metadata on dashboard. */
+.weather-station-meta + .weather-bulletin{margin-top:24px}
+@media(max-width:699px){.weather-station-meta + .weather-bulletin{margin-top:20px}}
+
+/* Batch 15.8: disambiguate summary values versus historical period aggregations. */
+.weather-summary-caption{font-size:11px;line-height:1.55;color:#5d7b90;margin:5px 0 10px;font-weight:500}
+.weather-trend-value + .weather-summary-caption{margin-top:0;margin-bottom:7px}
+.weather-rain-summary .weather-summary-caption{margin:0 0 16px}
+.weather-wind-dial > .weather-summary-caption{text-align:center;margin:0 0 8px}
+.weather-readout .weather-summary-caption{margin:8px 0 2px}
