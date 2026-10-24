@@ -55,7 +55,7 @@ def bounded_nav_decompress(compressed: bytes) -> bytes:
 def nav_for(start, end, cache: Path, download: bool):
     day = start.date()
     doy = day.timetuple().tm_yday
-    name = f'BRDC00WRD_S_{day.year}{doy:03d}0000_01D_MN.rnx.gz'
+    name = f'BRDC00IGS_R_{day.year}{doy:03d}0000_01D_MN.rnx.gz'
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     gz_path = cache / name
     if not gz_path.exists():
