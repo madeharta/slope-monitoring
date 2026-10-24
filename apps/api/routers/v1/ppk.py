@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Query, Request
 
 
 def _qa_schema_missing(exc: Exception) -> bool:
-    """Only PostgreSQL undefined_table (42P01); never mask other DB failures."""
-    return getattr(exc, "sqlstate", None) == "42P01"
+    """Recognize missing QA tables/columns; never mask other DB failures."""
+    return getattr(exc, "sqlstate", None) in ("42P01", "42703")
 
 
 from apps.api.dependencies import get_db_pool, require_role

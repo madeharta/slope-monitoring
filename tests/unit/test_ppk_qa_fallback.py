@@ -24,7 +24,7 @@ class Pool:
     def acquire(self): return Acquire(self.result)
 
 @pytest.mark.parametrize('endpoint', ['rovers','solutions'])
-@pytest.mark.parametrize('result,status', [(DBError('42P01'),'schema_unavailable'),([], 'available')])
+@pytest.mark.parametrize('result,status', [(DBError('42P01'),'schema_unavailable'),(DBError('42703'),'schema_unavailable'),([], 'available')])
 def test_schema_state(endpoint, result, status):
     with patch.object(ppk, 'get_db_pool', return_value=Pool(result)):
         if endpoint=='rovers':
