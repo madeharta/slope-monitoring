@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import gzip
+import io
 import hashlib
 import json
 import os
@@ -26,6 +27,31 @@ def windows(now: dt.datetime, grace_minutes: int, backfill_hours: int):
     return [(end - dt.timedelta(hours=i+1), end - dt.timedelta(hours=i)) for i in reversed(range(backfill_hours))]
 
 
+
+MAX_NAV_GZIP_BYTES = 30 * 1024 * 1024
+MAX_NAV_EXPANDED_BYTES = 80 * 1024 * 1024
+
+
+def bounded_nav_decompress(compressed: bytes) -> bytes:
+    """Reject overlarge or malformed NAV gzip before or during expansion."""
+    if len(compressed) > MAX_NAV_GZIP_BYTES:
+        raise ValueError('NAV compressed size too large')
+    out = bytearray()
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode='rb') as stream:
+            while True:
+                remaining = MAX_NAV_EXPANDED_BYTES - len(out)
+                block = stream.read(min(1024 * 1024, remaining + 1))
+                if not block:
+                    break
+                if len(block) > remaining:
+                    raise ValueError('NAV expanded size too large')
+                out.extend(block)
+    except (EOFError, OSError) as exc:
+        raise ValueError('NAV corrupt or truncated gzip') from exc
+    return bytes(out)
+
+
 def nav_for(start, end, cache: Path, download: bool):
     day = start.date()
     doy = day.timetuple().tm_yday
@@ -38,18 +64,20 @@ def nav_for(start, end, cache: Path, download: bool):
         url = f'https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{day.year}/{doy:03d}/{name}'
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'MAGRIS-QA-NAV/1'}), timeout=35) as response:
-                data = response.read(30*1024*1024 + 1)
+                data = response.read(MAX_NAV_GZIP_BYTES + 1)
         except (urllib.error.URLError, TimeoutError) as exc:
             raise RuntimeError('WAITING_NAV unavailable') from exc
-        if len(data) > 30*1024*1024:
+        if len(data) > MAX_NAV_GZIP_BYTES:
             raise ValueError('NAV exceeds maximum size')
-        plain = gzip.decompress(data)
+        plain = bounded_nav_decompress(data)
         validate_nav(plain, start, end)
         with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
             tmp.write(data)
             candidate = Path(tmp.name)
         candidate.replace(gz_path)
-    plain = gzip.decompress(gz_path.read_bytes())
+    if gz_path.stat().st_size > MAX_NAV_GZIP_BYTES:
+        raise ValueError('NAV cached compressed size too large')
+    plain = bounded_nav_decompress(gz_path.read_bytes())
     count = validate_nav(plain, start, end)
     target = cache / name[:-3]
     if not target.exists() or hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(plain).digest():

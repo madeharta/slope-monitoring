@@ -208,6 +208,9 @@ async def list_experimental_ppk_qa_solutions(
     for r in selected:
         item = dict(r)
         item.pop('id', None)  # internal pagination tie-breaker
+        # QA v1 stores ellipsoidal height exclusively.
+        # Explicit datum prevents interpreting it as MSL elevation.
+        item['vertical_datum'] = 'ELLIPSOIDAL_WGS84'
         gps_time = gps_epoch + timedelta(weeks=r['gps_week'], seconds=r['gps_tow_s'])
         derived_utc = gps_time - timedelta(seconds=18)
         if valid_start <= derived_utc < valid_until:
