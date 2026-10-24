@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apps.api.middlewares.error_handler import register_error_handlers
-from apps.api.routers.v1 import auth, blast, dashboard, device_config, devices_and_audit, ingest, model_ops, ppk, sensors, sites, uploads, users, weather, base_references
+from apps.api.routers.v1 import auth, blast, dashboard, device_config, devices_and_audit, ingest, model_ops, ppk, sensors, sites, uploads, users, weather, base_references, wu_weather
 from ml.pipeline.preprocessing.ppk_engine import RTKLibPPKEngine
 from services.rinex_service.acquisition import RINEXNavigationAcquisition
 from services.rinex_service.cache import RINEXCache
@@ -30,6 +30,46 @@ async def lifespan(app: FastAPI):
         max_size=10,
         init=_init_connection,
     )
+
+    app.state.ppk_qa_db_pool = None
+
+    qa_keys = (
+        "PPK_QA_DB_HOST",
+        "PPK_QA_DB_PORT",
+        "PPK_QA_DB_NAME",
+        "PPK_QA_DB_USER",
+        "PPK_QA_DB_PASSWORD",
+    )
+
+    qa_configured = any(os.getenv(key) for key in qa_keys)
+
+    if qa_configured:
+        missing = [key for key in qa_keys if not os.getenv(key)]
+        if missing:
+            raise RuntimeError(
+                "Incomplete PPK QA database configuration: "
+                + ", ".join(missing)
+            )
+
+        if os.environ["PPK_QA_DB_USER"] == os.getenv("DB_USER"):
+            raise RuntimeError(
+                "PPK QA database user must differ from operational DB user"
+            )
+
+        app.state.ppk_qa_db_pool = await asyncpg.create_pool(
+            host=os.environ["PPK_QA_DB_HOST"],
+            port=int(os.environ["PPK_QA_DB_PORT"]),
+            database=os.environ["PPK_QA_DB_NAME"],
+            user=os.environ["PPK_QA_DB_USER"],
+            password=os.environ["PPK_QA_DB_PASSWORD"],
+            min_size=1,
+            max_size=3,
+            init=_init_connection,
+            server_settings={
+                "default_transaction_read_only": "on",
+            },
+        )
+
     app.state.model_registry = ModelRegistry()
     rinex_cache = RINEXCache(os.getenv("RINEX_CACHE_DIR", "/data/rinex-cache"))
     nav_acquisition = RINEXNavigationAcquisition(rinex_cache)
@@ -58,6 +98,8 @@ async def lifespan(app: FastAPI):
         weather_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await weather_task
+    if app.state.ppk_qa_db_pool is not None:
+        await app.state.ppk_qa_db_pool.close()
     await app.state.db_pool.close()
 app = FastAPI(title="Slope & Blast Monitoring API", version="1.0.0", lifespan=lifespan)
 _allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
@@ -82,6 +124,7 @@ app.include_router(blast.router)
 app.include_router(auth.router)
 app.include_router(model_ops.router)
 app.include_router(weather.router)
+app.include_router(wu_weather.router)
 app.include_router(ppk.router)
 app.include_router(base_references.router)
 app.include_router(sensors.router)

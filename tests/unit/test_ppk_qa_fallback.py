@@ -26,7 +26,7 @@ class Pool:
 @pytest.mark.parametrize('endpoint', ['rovers','solutions'])
 @pytest.mark.parametrize('result,status', [(DBError('42P01'),'schema_unavailable'),(DBError('42703'),'schema_unavailable'),([], 'available')])
 def test_schema_state(endpoint, result, status):
-    with patch.object(ppk, 'get_db_pool', return_value=Pool(result)):
+    with patch.object(ppk, 'get_ppk_qa_pool', return_value=Pool(result)):
         if endpoint=='rovers':
             body=asyncio.run(ppk.list_experimental_ppk_qa_rovers(request=None,user=None,site_id='ITB-STAGING-01'))
             assert body['rovers']==[]
@@ -40,7 +40,7 @@ def test_schema_state(endpoint, result, status):
 
 @pytest.mark.parametrize('endpoint', ['rovers','solutions'])
 def test_other_sqlstate_propagates(endpoint):
-    with patch.object(ppk, 'get_db_pool', return_value=Pool(DBError('42501'))):
+    with patch.object(ppk, 'get_ppk_qa_pool', return_value=Pool(DBError('42501'))):
         with pytest.raises(DBError):
             if endpoint=='rovers':
                 asyncio.run(ppk.list_experimental_ppk_qa_rovers(request=None,user=None,site_id='ITB-STAGING-01'))

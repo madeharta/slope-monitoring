@@ -100,7 +100,7 @@ class FakePool:
 def test_qa_api_contract_240_epochs():
     app = FastAPI()
     app.include_router(router)
-    app.state.db_pool = FakePool(fixture_rows())
+    app.state.ppk_qa_db_pool = FakePool(fixture_rows())
 
     token = create_access_token(
         TokenPayload(

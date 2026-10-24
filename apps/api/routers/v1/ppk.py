@@ -98,13 +98,29 @@ async def list_ppk_solutions(
 
 
 # b12-unified-filter-v1 — experimental QA only, never displacement.
+
+
+
+def get_ppk_qa_pool(request: Request):
+    """Return isolated QA read-only pool; never fall back to main DB."""
+    from fastapi import HTTPException
+
+    pool = getattr(request.app.state, "ppk_qa_db_pool", None)
+    if pool is None:
+        raise HTTPException(
+            status_code=503,
+            detail="PPK QA database is not configured",
+        )
+    return pool
+
+
 @router.get('/qa/rovers')
 async def list_experimental_ppk_qa_rovers(
     request: Request,
     user: TokenPayload = Depends(require_role("viewer")),
     site_id: str = Query(default='ITB-STAGING-01'),
 ) -> dict:
-    pool = get_db_pool(request)
+    pool = get_ppk_qa_pool(request)
     try:
         async with pool.acquire() as conn:
             values = await conn.fetch('''SELECT DISTINCT rover_device_id FROM public.ppk_qa_experimental_solutions
@@ -172,7 +188,7 @@ async def list_experimental_ppk_qa_solutions(
         cutoff = (now - gps_epoch).total_seconds() + 18 - delta
 
     offset = parse_cursor(cursor)
-    pool = get_db_pool(request)
+    pool = get_ppk_qa_pool(request)
     availability_status = 'available'
     try:
         async with pool.acquire() as conn:

@@ -27,7 +27,7 @@ def client():
     app = FastAPI()
     register_error_handlers(app)
     app.include_router(router)
-    app.state.db_pool = _FakePool()
+    app.state.ppk_qa_db_pool = _FakePool()
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
 
