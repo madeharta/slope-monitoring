@@ -138,9 +138,19 @@ async def run_once(args):
     verify_scope(s)
     if args.apply and os.getenv("PPK_QA_AUTOMATION_ENABLED", "false").lower() != "true":
         raise RuntimeError("worker DISABLED; set PPK_QA_AUTOMATION_ENABLED=true explicitly")
-    dsn = os.getenv("PPK_QA_DATABASE_URL")
-    if not dsn:
-        raise RuntimeError("PPK_QA_DATABASE_URL required, no default DB allowed")
+    source_dsn = os.getenv("PPK_QA_SOURCE_DATABASE_URL")
+    qa_dsn = os.getenv("PPK_QA_WRITER_DATABASE_URL")
+    expected_source_db = os.getenv("PPK_QA_SOURCE_DB_NAME")
+    expected_qa_db = os.getenv("PPK_QA_WRITER_DB_NAME")
+    expected_source_role = os.getenv("PPK_QA_SOURCE_DB_ROLE")
+    expected_qa_role = os.getenv("PPK_QA_WRITER_DB_ROLE")
+    if not all((source_dsn, qa_dsn, expected_source_db, expected_qa_db,
+                expected_source_role, expected_qa_role)):
+        raise RuntimeError("dual-DB connection and identity configuration required")
+    if source_dsn == qa_dsn or expected_source_db == expected_qa_db:
+        raise RuntimeError("SOURCE and QA WRITER must use separate databases")
+    if expected_source_role == expected_qa_role:
+        raise RuntimeError("SOURCE and QA WRITER must use separate roles")
     start = datetime.fromisoformat(args.since.replace("Z", "+00:00"))
     end = datetime.fromisoformat(args.until.replace("Z", "+00:00"))
     if start.tzinfo is None or end.tzinfo is None:
@@ -153,10 +163,54 @@ async def run_once(args):
     config_bytes = s.rtklib_config.read_bytes()
     verify_forward_qa_config(config_bytes)
     verify_base_coordinates_in_config(config_bytes, s.base_reference)
-    conn = await asyncpg.connect(dsn)
+    source_conn = await asyncpg.connect(source_dsn)
+    try:
+        conn = await asyncpg.connect(qa_dsn)
+    except Exception:
+        await source_conn.close()
+        raise
+
     failures = 0
     try:
+        source_identity = await source_conn.fetchrow(
+            "SELECT current_database() AS db, current_user AS role"
+        )
+        qa_identity = await conn.fetchrow(
+            "SELECT current_database() AS db, current_user AS role"
+        )
+        if (source_identity["db"] != expected_source_db
+                or source_identity["role"] != expected_source_role
+                or qa_identity["db"] != expected_qa_db
+                or qa_identity["role"] != expected_qa_role):
+            raise RuntimeError("database identity mismatch; fail closed")
+
+        await source_conn.execute("SET default_transaction_read_only = on")
+
+        source_ok = await source_conn.fetchval("""
+            SELECT has_table_privilege(current_user,
+                       'public.gnss_raw_samples', 'SELECT')
+               AND has_table_privilege(current_user,
+                       'public.devices', 'SELECT')
+        """)
+        source_write = await source_conn.fetchval("""
+            SELECT has_table_privilege(current_user,
+                       'public.gnss_raw_samples', 'INSERT,UPDATE,DELETE')
+                OR has_table_privilege(current_user,
+                       'public.devices', 'INSERT,UPDATE,DELETE')
+        """)
+        if not source_ok or source_write:
+            raise RuntimeError("SOURCE role privileges invalid")
+
         if args.apply:
+            writer_ok = await conn.fetchval("""
+                SELECT has_table_privilege(current_user,
+                           'public.ppk_qa_jobs', 'SELECT,INSERT,UPDATE')
+                   AND has_table_privilege(current_user,
+                           'public.ppk_qa_experimental_solutions',
+                           'SELECT,INSERT,UPDATE')
+            """)
+            if not writer_ok:
+                raise RuntimeError("QA writer privileges insufficient")
             exists = await conn.fetchval("SELECT to_regclass('public.ppk_qa_experimental_solutions') IS NOT NULL AND to_regclass('public.ppk_qa_jobs') IS NOT NULL")
             if not exists:
                 raise RuntimeError("QA-only tables missing; worker will not create them automatically")
@@ -170,7 +224,7 @@ async def run_once(args):
         while cursor < end:
             stop = min(cursor + timedelta(minutes=args.window_minutes), end)
             # Both devices and the site must be known. We select via devices to avoid cross-site mixing.
-            records = await conn.fetch("""
+            records = await source_conn.fetch("""
                 SELECT s.time,s.device_id,s.raw_payload_base64
                 FROM gnss_raw_samples s
                 JOIN devices d ON d.device_id=s.device_id
@@ -298,7 +352,10 @@ async def run_once(args):
         if failures:
             raise RuntimeError(f'{failures} PPK QA job(s) FAILED; nonzero exit for scheduler')
     finally:
-        await conn.close()
+        try:
+            await conn.close()
+        finally:
+            await source_conn.close()
 
 
 def main():

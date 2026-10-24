@@ -127,9 +127,16 @@ def run(args):
     if not config.is_file():
         raise RuntimeError('PPK_QA_FORWARD_CONFIG required (forward, provisional SPP)')
     nav_cache = Path(os.environ.get('PPK_QA_NAV_CACHE', '/var/cache/magris-ppk-qa')).expanduser()
-    dsn = os.getenv('PPK_QA_DATABASE_URL')
-    if not dsn:
-        raise RuntimeError('PPK_QA_DATABASE_URL missing')
+    required_db_config = (
+        'PPK_QA_SOURCE_DATABASE_URL',
+        'PPK_QA_WRITER_DATABASE_URL',
+        'PPK_QA_SOURCE_DB_NAME',
+        'PPK_QA_WRITER_DB_NAME',
+        'PPK_QA_SOURCE_DB_ROLE',
+        'PPK_QA_WRITER_DB_ROLE',
+    )
+    if any(not os.getenv(key) for key in required_db_config):
+        raise RuntimeError('dual-DB scheduler configuration missing')
     if args.apply and os.getenv('PPK_QA_STAGING_ONLY', 'false').lower() != 'true':
         raise RuntimeError('PPK_QA_STAGING_ONLY explicit true required')
     env = os.environ.copy()
