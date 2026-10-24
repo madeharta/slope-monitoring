@@ -101,6 +101,69 @@ async def list_ppk_solutions(
 
 
 
+
+def require_ppk_qa_site_access(user: TokenPayload, site_id: str) -> None:
+    """Fail-closed, release-scoped QA site authorization."""
+    import json
+    import os
+    from fastapi import HTTPException
+
+    raw = os.getenv("PPK_QA_SITE_ACCESS_JSON", "")
+
+    try:
+        policy = json.loads(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="PPK QA site access denied")
+
+    if not isinstance(policy, dict):
+        raise HTTPException(status_code=403, detail="PPK QA site access denied")
+
+    allowed_users = policy.get(site_id)
+
+    if (
+        not isinstance(allowed_users, list)
+        or not allowed_users
+        or not all(isinstance(uid, str) and uid for uid in allowed_users)
+        or user.sub not in allowed_users
+    ):
+        raise HTTPException(status_code=403, detail="PPK QA site access denied")
+
+
+
+async def require_active_ppk_qa_user(request: Request, user: TokenPayload) -> None:
+    """Reject disabled/deleted accounts before any QA data access."""
+    from fastapi import HTTPException
+
+    pool = getattr(request.app.state, "db_pool", None)
+
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Account verification unavailable")
+
+    try:
+        user_id = int(user.sub)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="PPK QA access denied")
+
+    try:
+        async with pool.acquire() as conn:
+            account = await conn.fetchrow(
+                "SELECT disabled_at, role FROM public.users WHERE user_id=$1",
+                user_id,
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Account verification unavailable",
+        ) from exc
+
+    if (
+        account is None
+        or account["disabled_at"] is not None
+        or account["role"] != user.role
+    ):
+        raise HTTPException(status_code=403, detail="PPK QA access denied")
+
+
 def get_ppk_qa_pool(request: Request):
     """Return isolated QA read-only pool; never fall back to main DB."""
     from fastapi import HTTPException
@@ -120,6 +183,8 @@ async def list_experimental_ppk_qa_rovers(
     user: TokenPayload = Depends(require_role("viewer")),
     site_id: str = Query(default='ITB-STAGING-01'),
 ) -> dict:
+    await require_active_ppk_qa_user(request, user)
+    require_ppk_qa_site_access(user, site_id)
     pool = get_ppk_qa_pool(request)
     try:
         async with pool.acquire() as conn:
@@ -188,6 +253,8 @@ async def list_experimental_ppk_qa_solutions(
         cutoff = (now - gps_epoch).total_seconds() + 18 - delta
 
     offset = parse_cursor(cursor)
+    await require_active_ppk_qa_user(request, user)
+    require_ppk_qa_site_access(user, site_id)
     pool = get_ppk_qa_pool(request)
     availability_status = 'available'
     try:

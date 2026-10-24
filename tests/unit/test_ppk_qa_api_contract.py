@@ -198,5 +198,5 @@ def test_qa_api_contract_240_epochs():
             params={"site_id": "OTHER-SITE"},
             headers=headers,
         )
-        assert other_site.status_code == 200
-        assert other_site.json()["rows"] == []
+        assert other_site.status_code == 403
+        assert "rows" not in other_site.json()
