@@ -69,7 +69,7 @@ export default function MFAEnroll() {
     <div className="l2 pg-page">
       <div className="pg-header">
         <button className="pg-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
-        <h1>Aktifkan Verifikasi Dua Langkah (MFA)</h1>
+        <h1>Enable Two-Factor Authentication (MFA)</h1>
       </div>
 
       {step === 1 && (
@@ -123,7 +123,7 @@ export default function MFAEnroll() {
 
       {step === 3 && (
         <div className="panel pg-card" style={{ maxWidth: 480, borderColor: "var(--ok)" }}>
-          <h2>MFA aktif ✓</h2>
+          <h2>MFA enabled ✓</h2>
           <p className="pg-body">
             Future high-risk actions will require the authenticator code.
           </p>

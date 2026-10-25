@@ -107,7 +107,7 @@ export default function Devices() {
           body.detail + "\n\nKetik salah satu:\n" +
           "  'device' = hapus device saja, riwayat data DIBIARKAN\n" +
           "  'semua'  = hapus device + SEMUA riwayat measurements-nya\n" +
-          "  (kosongkan/Cancel untuk batal)"
+          "  (leave blank or select Cancel to abort)"
         );
         if (choice === "device") return del(device_id, true, false);
         if (choice === "semua") return del(device_id, true, true);
@@ -141,7 +141,7 @@ export default function Devices() {
                 <option value="">Select site…</option>
                 {sites.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-              <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newDevice.device_id || !newDevice.device_type || !newDevice.site_id} onClick={createDevice}>Buat</button>
+              <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newDevice.device_id || !newDevice.device_type || !newDevice.site_id} onClick={createDevice}>Create</button>
             </div>
             <span style={{ fontSize: 11 }}>The site must be registered first (see Sites). If missing from the list, enter its site ID manually.</span>
           </div>

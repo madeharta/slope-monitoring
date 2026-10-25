@@ -94,11 +94,11 @@ export default function Users() {
           <div className="admin-warn" style={{ marginBottom: 16, background: "var(--panel-2)", color: "var(--ink-2)", borderColor: "var(--line)" }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <input placeholder="Email" value={newUser.email} onChange={(e) => setNewUser((u) => ({ ...u, email: e.target.value }))} />
-              <input placeholder="Password (min 8 karakter)" type="password" value={newUser.password} onChange={(e) => setNewUser((u) => ({ ...u, password: e.target.value }))} />
+              <input placeholder="Password (minimum 8 characters)" type="password" value={newUser.password} onChange={(e) => setNewUser((u) => ({ ...u, password: e.target.value }))} />
               <select value={newUser.role} onChange={(e) => setNewUser((u) => ({ ...u, role: e.target.value }))}>
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
-              <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newUser.email || newUser.password.length < 8} onClick={createUser}>Buat</button>
+              <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newUser.email || newUser.password.length < 8} onClick={createUser}>Create</button>
             </div>
           </div>
         )}
@@ -119,15 +119,15 @@ export default function Users() {
                       {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </td>
-                  <td>{u.mfa_enabled ? "Aktif" : "—"}</td>
+                  <td>{u.mfa_enabled ? "Active" : "—"}</td>
                   <td>
                     <span className={"sc-dot " + (u.disabled_at ? "sc-off" : "sc-on")} style={{ display: "inline-block", marginRight: 6 }} />
-                    {u.disabled_at ? "Nonaktif" : "Aktif"}
+                    {u.disabled_at ? "Inactive" : "Active"}
                   </td>
                   <td>{u.created_at ? new Date(u.created_at).toLocaleDateString("id-ID") : "—"}</td>
                   <td>
                     <button className="devlink" style={{ color: u.disabled_at ? "var(--ok)" : "var(--bahaya)" }} disabled={busy === u.user_id} onClick={() => toggleDisable(u)}>
-                      {u.disabled_at ? "Aktifkan" : "Nonaktifkan"}
+                      {u.disabled_at ? "Activate" : "Deactivate"}
                     </button>
                   </td>
                 </tr>

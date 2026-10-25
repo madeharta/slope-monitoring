@@ -22,7 +22,14 @@ export default function Sites() {
   const isAdmin = auth?.role === "admin";
 
   function reload() {
-    getOverview().then((o) => setSlopes(o.slopes || [])).catch(() => {});
+    setError(null);
+    setSlopes(null);
+    getOverview(authFetch)
+      .then((o) => setSlopes(o.slopes || []))
+      .catch((err) => {
+        setError(`Failed to load sites: ${err.message}`);
+        setSlopes([]);
+      });
   }
   useEffect(() => { reload(); }, []);
 

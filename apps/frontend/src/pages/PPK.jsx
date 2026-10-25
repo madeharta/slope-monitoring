@@ -265,7 +265,7 @@ export default function PPK() {
       </details>
       <details className="panel ppk-card ppk-method-note">
         <summary>Data Limitations &amp; Interpretation</summary>
-        <p><b>Base-reference type and source/receiver time integrity are not persisted by endpoint <code>ppk.solution.v1</code> saat ini.</b> This page deliberately does not infer or fabricate nilai tersebut. Evidence engine acceptance harus dibaca dari acceptance artifact, sedangkan production acceptance tetap memerlukan surveyed BASE-01 ellipsoidal coordinates.</p>
+        <p><b>Base-reference type and source/receiver time integrity are not persisted by endpoint <code>ppk.solution.v1</code> at present.</b> This page deliberately does not infer or fabricate those values. Engine acceptance evidence must be reviewed in the acceptance artifacts, while production acceptance still requires surveyed BASE-01 ellipsoidal coordinates.</p>
       </details>
     </div>
   );

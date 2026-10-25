@@ -209,9 +209,9 @@ export default function BlastControl() {
       <div className="blast-warning">
         <strong>COMMAND STATE ≠ FIELD ACKNOWLEDGEMENT</strong>
         <span>
-          TriggerStart=1 berarti command sudah tersimpan di server.
+          TriggerStart=1 means the command has been stored on the server.
           This does not prove that the rover has received the trigger or is ARMED,
-          mendeteksi blast, atau selesai merekam.
+          detected a blast, or completed recording.
         </span>
       </div>
 
@@ -332,7 +332,7 @@ export default function BlastControl() {
 
         {!canOperate && (
           <div className="blast-note">
-            Role viewer hanya dapat melihat konfigurasi.
+            Users with the viewer role can only view the configuration.
             START dan RESET memerlukan operator/admin;
             endpoint START juga tetap dijaga MFA oleh backend.
           </div>

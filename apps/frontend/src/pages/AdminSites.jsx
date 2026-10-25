@@ -21,7 +21,7 @@ export default function AdminSites() {
     return (
       <div className="l2 pgdoc2-page">
         <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button></div>
-        <div className="pgdoc2-card"><p>Halaman ini khusus role admin.</p></div>
+        <div className="pgdoc2-card"><p>This page is restricted to administrators.</p></div>
       </div>
     );
   }
@@ -66,19 +66,18 @@ export default function AdminSites() {
 
       <div className="pgdoc2-card">
         <p className="pgdoc-lead">
-          Site harus didaftarkan manual sebelum device bisa terhubung ke
-          lokasi itu (bukan auto-create dari data masuk).
+          A site must be registered manually before devices can be associated with it. Incoming data does not automatically create a site.
         </p>
 
         <div className="admin-form">
           <label>Site ID<input value={form.site_id} onChange={set("site_id")} placeholder="SITE-B" /></label>
-          <label>Name<input value={form.name} onChange={set("name")} placeholder="Lereng B" /></label>
+          <label>Name<input value={form.name} onChange={set("name")} placeholder="Slope B" /></label>
           <label>Latitude<input value={form.lat} onChange={set("lat")} onBlur={checkNearby} placeholder="-6.2" /></label>
           <label>Longitude<input value={form.lon} onChange={set("lon")} onBlur={checkNearby} placeholder="106.8" /></label>
 
           {nearby && nearby.length > 0 && (
             <div className="admin-warn">
-              <strong>⚠ Site terdekat ditemukan:</strong>
+              <strong>⚠ Nearby site detected:</strong>
               <ul>{nearby.map((n) => <li key={n.site_id}>{n.name} ({n.site_id}) — {n.distance_m.toFixed(0)}m</li>)}</ul>
               Confirm that this is a separate physical location before continuing.
             </div>
@@ -88,7 +87,7 @@ export default function AdminSites() {
             <div className="admin-error">
               {error}
               <div style={{ marginTop: 8 }}>
-                <button className="admin-btn" onClick={() => submit(true)} disabled={submitting}>Lanjutkan tetap</button>
+                <button className="admin-btn" onClick={() => submit(true)} disabled={submitting}>Continue anyway</button>
               </div>
             </div>
           )}
@@ -96,7 +95,7 @@ export default function AdminSites() {
           {success && <div className="admin-success">{success}</div>}
 
           <button className="admin-btn admin-btn-primary" onClick={() => submit(false)} disabled={submitting || !form.site_id || !form.name || !form.lat || !form.lon}>
-            {submitting ? "Menyimpan…" : "Buat Site"}
+            {submitting ? "Saving…" : "Create Site"}
           </button>
         </div>
       </div>

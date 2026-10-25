@@ -846,7 +846,7 @@ export default function SensorMonitoring() {
             ))}
             {selectedRawxDevice && <div className="sensor-rawx-unified-divider" />}
             {!selectedRawxDevice && (
-              <p className="sensor-v2-note" role="status">GNSS RAWX is unavailable for the selected device and time range. Timeline berikut membandingkan perangkat lain di site yang sama; coba pilih rentang waktu lebih panjang.</p>
+              <p className="sensor-v2-note" role="status">GNSS RAWX is unavailable for the selected device and time range. The following timeline compares other devices at the same site. Try selecting a longer time range.</p>
             )}
             <div className="sensor-v2-section-head"><div>
               <span className="sensor-v2-eyebrow">Availability · site-wide comparison</span>

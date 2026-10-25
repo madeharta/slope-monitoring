@@ -212,16 +212,16 @@ export default function TopBar() {
                 </button>
               )}
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/mfa/enroll"); }}>
-                Aktifkan / Kelola MFA (2FA)
+                Enable / Manage MFA (2FA)
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/panduan"); }}>
                 User Guide
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); window.open("mailto:support@namadomain.id"); }}>
-                Bantuan
+                Help
               </button>
               <button role="menuitem" className="pd-danger" onClick={() => { setProfileOpen(false); logout(); nav("/login", { replace: true }); }}>
-                Keluar
+                Sign Out
               </button>
             </div>
           )}

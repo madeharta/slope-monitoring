@@ -137,7 +137,7 @@ export default function SatelliteQualityQA({ siteId, deviceId, window }) {
           </div>
         </div>
         <small style={{ display: "block", marginTop: 16, opacity: .74, lineHeight: 1.5 }}>
-          Unique SV = distinct (gnssId, svId); numMeas = signal observations. C/N0 hanya dari measured value valid nonzero. Invalid RAWX/time excluded. QA only; not PPK FIX, displacement, atau safety evidence.
+          Unique SV = distinct (gnssId, svId); numMeas = signal observations. C/N0 includes only valid, nonzero measured values. Invalid RAWX/time excluded. QA only; not PPK FIX, displacement, or safety evidence.
         </small>
       </>}
     </section>

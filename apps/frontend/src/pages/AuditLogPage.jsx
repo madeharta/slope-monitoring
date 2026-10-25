@@ -40,14 +40,14 @@ export default function AuditLogPage() {
 
       <div className="panel" style={{ maxWidth: 1100, margin: "0 auto", padding: 20 }}>
         <div className="table-filters">
-          <input placeholder="Filter aksi (mis. login, blast)" value={actionFilter}
+          <input placeholder="Filter actions (e.g. login, blast)" value={actionFilter}
             onChange={(e) => { setActionFilter(e.target.value); setPage(0); }} />
-          <input placeholder="Filter email pelaku" value={actorFilter}
+          <input placeholder="Filter actor email" value={actorFilter}
             onChange={(e) => { setActorFilter(e.target.value); setPage(0); }} />
           <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
-            {[10, 25, 50, 100, 500].map((n) => <option key={n} value={n}>{n} / halaman</option>)}
+            {[10, 25, 50, 100, 500].map((n) => <option key={n} value={n}>{n} / page</option>)}
           </select>
-          <span className="table-total">{total} total entri</span>
+          <span className="table-total">{total} total entries</span>
         </div>
 
         {error && <div className="admin-error">{error}</div>}
@@ -65,7 +65,7 @@ export default function AuditLogPage() {
                     <td>{new Date(e.occurred_at).toLocaleString("id-ID")}</td>
                     <td><code>{e.action}</code></td>
                     <td>{e.target_type}: {e.target_id}</td>
-                    <td>{e.actor_email || "(sistem/device)"}</td>
+                    <td>{e.actor_email || "(system/device)"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -73,8 +73,8 @@ export default function AuditLogPage() {
 
             <div className="table-pager">
               <button className="admin-btn" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>← Previous</button>
-              <span>Halaman {page + 1} dari {totalPages}</span>
-              <button className="admin-btn" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Berikutnya →</button>
+              <span>Page {page + 1} of {totalPages}</span>
+              <button className="admin-btn" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next →</button>
             </div>
           </>
         )}

@@ -75,7 +75,7 @@ export default function PPKQACharts({siteId,roverId,timeRange,limit,revision}){
       <p className="ppk-qa-hint">{rows.length} epoch · API persisted · reference_type=PROVISIONAL_SPP · validation_status=unvalidated</p>
       <div className="ppk-qa-counts">{[1,2,5].map(q=><div key={q}><span>{LABELS[q]}</span><strong>{counts[q]||0}</strong></div>)}</div>
       <div className="ppk-qa-stacked" aria-label="PPK quality distribution">{[1,2,5].map(q=><span key={q} style={{width:`${((counts[q]||0)/rows.length)*100}%`,background:COLORS[q]}} title={`${LABELS[q]} ${counts[q]||0}`} />)}</div>
-      <h3>Solution quality timeline</h3><div className="ppk-qa-timeline"><svg viewBox="0 0 800 118" role="img" aria-label="Solution quality by elapsed GPST in minutes; rows FIX, FLOAT and SINGLE" preserveAspectRatio="none">
+      <h3>Solution quality timeline</h3><div className="ppk-qa-timeline"><svg viewBox="0 0 800 118" style={{ height: 118, minHeight: 118, width: "100%", display: "block" }} role="img" aria-label="Solution quality by elapsed GPST in minutes; rows FIX, FLOAT and SINGLE" preserveAspectRatio="xMinYMid meet">
         {[[1,'FIX',20],[2,'FLOAT',48],[5,'SINGLE',76]].map(([q,name,y])=><g key={q}><text x="8" y={y+4} fontSize="11" fill="currentColor">{name}</text><line x1="90" x2="784" y1={y} y2={y} stroke="currentColor" opacity=".1" /></g>)}
         <line x1="90" x2="784" y1="89" y2="89" stroke="currentColor" opacity=".45" />
         {[0,0.5,1].map(f=><text key={f} x={90+f*694} y="103" textAnchor="middle" fontSize="10" fill="currentColor">{elapsedMinutes(rows[0].epoch+f*(rows[rows.length-1].epoch-rows[0].epoch),rows[0].epoch)}</text>)}

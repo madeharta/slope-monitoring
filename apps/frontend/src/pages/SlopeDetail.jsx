@@ -249,6 +249,8 @@ export default function SlopeDetail() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [lastLoadedRange, setLastLoadedRange] = useState(null);
   const [device, setDevice] = useState(null); // isolated sensor group, or null
   const [selectedRover, setSelectedRover] = useState(null);
   const [detailView, setDetailView] = useState("charts");
@@ -259,6 +261,7 @@ export default function SlopeDetail() {
     let timer = null;
     let controller = null;
     let retryCount = 0;
+    setLoadError(null);
 
     const POLL_MS = 8000;
     const MAX_BACKOFF_MS = 60000;
@@ -310,12 +313,15 @@ export default function SlopeDetail() {
         if (!alive) return;
 
         setData(d);
+        setLoadError(null);
+        setLastLoadedRange({ hours, from: fromIso, to: toIso });
         setTableNow(Date.now());
 
         retryCount = 0;
         schedule(POLL_MS);
       } catch (error) {
         if (!alive || error?.name === "AbortError") return;
+        setLoadError("Measurements could not be loaded for the selected time range.");
 
         // Historical custom ranges intentionally remain one-shot.
         if (!shouldPoll) return;
@@ -401,9 +407,16 @@ export default function SlopeDetail() {
     return { disp: displacement, velocity, acceleration };
   }, [byQ, data, selectedRover]);
 
-  if (!data) return <div className="loading">Loading {name}…</div>;
+  if (!data) return <div className="loading">{loadError || `Loading ${name}…`}</div>;
 
   const th = data.thresholds || {};
+  const isCurrentRange = lastLoadedRange?.hours === hours &&
+    lastLoadedRange?.from === (customFrom ? new Date(customFrom).toISOString() : null) &&
+    lastLoadedRange?.to === (customTo ? new Date(customTo).toISOString() : null);
+  const plotRange = customFrom && customTo
+    ? { from: new Date(customFrom).toISOString(), to: new Date(customTo).toISOString() }
+    : { from: new Date(Date.now() - hours * 3600000).toISOString(), to: new Date().toISOString() };
+  const chartRange = isCurrentRange ? plotRange : null;
   const STATUS = pal.marker;      // concrete status colours for the canvas charts
   const BAND = pal.band;          // rgba band fills
   const col = (q) => pal.line[q] || pal.lineDefault;
@@ -479,6 +492,19 @@ export default function SlopeDetail() {
   return (
     <div className="l2 l2detail">
       <div role="status" style={{background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43"}}>DATA NOT FIELD VALIDATED. Historical displacement series are not displayed before baseline approval; the displayed status does not guarantee safety.</div>
+      {isCurrentRange && !loadError &&
+        !(data?.series || []).some((s) => s.points?.length > 0) &&
+        !(data?.device_series || []).some((s) => s.points?.length > 0) && (
+          <div role="status" style={{ margin: "12px 0", padding: 12, border: "1px solid var(--line)", borderRadius: 8, background: "var(--panel)", color: "var(--ink)" }}>
+            No technical sensor measurements available for the selected time range. External weather observations may still be available.
+            {data?.latest_stale_reading?.time && (
+              <div style={{ marginTop: 6 }}>
+                Last recorded measurement: {new Date(data.latest_stale_reading.time).toLocaleString("en-GB", { timeZone: "Asia/Jakarta" })} WIB.
+                Historical data may be available through a custom date range.
+              </div>
+            )}
+          </div>
+        )}
       {id === "ITB-STAGING-01" && ppkQaSummary.state === "ok" && ppkQaSummary.result?.total > 0 && (
         <section aria-label="Experimental PPK QA summary" style={{border:"1px solid #dbe3eb",borderRadius:10,padding:"12px 16px",margin:"12px 0",background:"var(--surface,#fff)"}}>
           <strong>PPK experimental QA · ROVER-B1-02</strong>
@@ -538,6 +564,8 @@ export default function SlopeDetail() {
         </div>
       </div>
 
+      {loadError && <div role="alert" style={{ padding: "10px 16px", color: "#9d432d" }}>{loadError} The previous measurements may still be shown.</div>}
+      {!isCurrentRange && !loadError && <div role="status" style={{ padding: "8px 16px" }}>Loading measurements for the selected time range…</div>}
       <div className="detail-view-switch" role="group" aria-label="Detail view">
         <button className={detailView === "charts" ? "on" : ""} onClick={() => setDetailView("charts")}>Charts</button>
         <button className={detailView === "table" ? "on" : ""} onClick={() => setDetailView("table")}>Data Table</button>
@@ -626,7 +654,7 @@ export default function SlopeDetail() {
                 ? [{ label: "10.00 mm limit", color: STATUS.bahaya, dash: "dashed" }]
                 : []),
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "mm", min: dispMin, max: dispMax }}
               series={[
                 { name: "ΔZ vertical", data: QD("disp_u"), color: col("disp_u"), width: 1.4, dash: "dotted", opacity: op("disp_u") },
@@ -652,7 +680,7 @@ export default function SlopeDetail() {
               { label: "Tilt X · deg", color: col("tilt_x") },
               { label: "Tilt Y · deg", color: col("tilt_y"), dash: "dashed" },
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "deg", min: 0, max: tiltMax }}
               series={[
                 { name: "Tilt Y", data: Q("tilt_y"), color: col("tilt_y"), width: 1.6, dash: "dashed", opacity: op("tilt_y") },
@@ -677,7 +705,7 @@ export default function SlopeDetail() {
               { label: "ADXL355 PPV · mm/s", color: col("ppv") },
               { label: "MPU9250 PPV · mm/s", color: col("ppv_mpu9250"), dash: "dashed" },
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "g", min: 0, max: ppaMax }}
               right={{ name: "mm/s", min: 0, max: ppvMax }}
               series={[
@@ -716,7 +744,7 @@ export default function SlopeDetail() {
                 ? [{ label: "Tertiary creep", color: BAND.bahaya, kind: "box" }]
                 : []),
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "mm/day", min: 0, max: velMax }}
               right={{ name: "mm/day²", min: 0, max: 24 }}
               series={[
