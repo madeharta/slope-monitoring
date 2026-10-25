@@ -17,10 +17,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        DB_PASSWORD="$$(cat /run/secrets/api_db_password)"
+        export DB_PASSWORD
+        exec "$$@"
+      - magris-wu-init
     command:
       - python
       - -m
       - services.weather_service.wu_collector
+    secrets:
+      - api_db_password
     restart: unless-stopped
     depends_on:
       db:
@@ -36,3 +46,7 @@ services:
       WU_POLL_INTERVAL_SECONDS: "900"
     security_opt:
       - no-new-privileges:true
+
+secrets:
+  api_db_password:
+    file: /etc/landslidemon/secrets/api_db_password
