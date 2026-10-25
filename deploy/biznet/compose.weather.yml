@@ -32,9 +32,6 @@ services:
     secrets:
       - api_db_password
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
       DB_HOST: db
       DB_PORT: "5432"
