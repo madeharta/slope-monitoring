@@ -87,7 +87,7 @@ export default function Devices() {
   }
 
   async function del(device_id, force = false, purge = false) {
-    if (!force && !window.confirm(`Hapus device "${device_id}"?`)) return;
+    if (!force && !window.confirm(`Delete device "${device_id}"?`)) return;
     setBusy(device_id);
     setError(null);
     try {
@@ -125,9 +125,9 @@ export default function Devices() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Devices</h1>
-        {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ Device Baru</button>}
+        {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ New Device</button>}
       </div>
 
       <div className="panel" style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
@@ -135,26 +135,26 @@ export default function Devices() {
           <div className="admin-warn" style={{ marginBottom: 16, background: "var(--panel-2)", color: "var(--ink-2)", borderColor: "var(--line)" }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <input placeholder="Device ID (BASE-02)" value={newDevice.device_id} onChange={(e) => setNewDevice((d) => ({ ...d, device_id: e.target.value }))} />
-              <input placeholder="Nama tampilan (opsional)" value={newDevice.label} onChange={(e) => setNewDevice((d) => ({ ...d, label: e.target.value }))} />
+              <input placeholder="Display name (optional)" value={newDevice.label} onChange={(e) => setNewDevice((d) => ({ ...d, label: e.target.value }))} />
               <input placeholder="Tipe (gnss_base/gnss_rover)" value={newDevice.device_type} onChange={(e) => setNewDevice((d) => ({ ...d, device_type: e.target.value }))} />
               <select value={newDevice.site_id} onChange={(e) => setNewDevice((d) => ({ ...d, site_id: e.target.value }))}>
-                <option value="">Pilih site…</option>
+                <option value="">Select site…</option>
                 {sites.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
               <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newDevice.device_id || !newDevice.device_type || !newDevice.site_id} onClick={createDevice}>Buat</button>
             </div>
-            <span style={{ fontSize: 11 }}>Site harus sudah terdaftar dulu (lihat halaman Sites) — kalau belum ada di daftar, site_id-nya ketik manual.</span>
+            <span style={{ fontSize: 11 }}>The site must be registered first (see Sites). If missing from the list, enter its site ID manually.</span>
           </div>
         )}
 
         <div className="table-filters">
-          <input placeholder="Cari device ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input placeholder="Search device ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)}>
-            <option value="">Semua site</option>
+            <option value="">All sites</option>
             {sites.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">Semua status</option>
+            <option value="all">All statuses</option>
             <option value="online">Online saja</option>
             <option value="offline">Offline saja</option>
           </select>
@@ -162,14 +162,14 @@ export default function Devices() {
         </div>
 
         {error && <div className="admin-error" style={{ marginBottom: 12, whiteSpace: "pre-line" }}>{error}</div>}
-        {!devices && !error && <div className="loading">Memuat…</div>}
-        {filtered && filtered.length === 0 && <div className="sc-row">Tidak ada device yang cocok filter.</div>}
+        {!devices && !error && <div className="loading">Loading…</div>}
+        {filtered && filtered.length === 0 && <div className="sc-row">No devices match the filters.</div>}
         {filtered && filtered.length > 0 && (
           <table className="devtable">
             <thead>
               <tr>
-                <th>Device ID</th><th>Nama</th><th>Tipe</th><th>Site</th><th>Status</th><th>Terakhir terlihat</th>
-                {isAdmin && <th>Aksi</th>}
+                <th>Device ID</th><th>Name</th><th>Type</th><th>Site</th><th>Status</th><th>Last seen</th>
+                {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -186,8 +186,8 @@ export default function Devices() {
                         </select>
                       </td>
                       <td colSpan={2}>
-                        <button className="devlink" disabled={busy === d.device_id} onClick={() => saveEdit(d.device_id)}>Simpan</button>{" "}
-                        <button className="devlink" onClick={() => setEditing(null)}>Batal</button>
+                        <button className="devlink" disabled={busy === d.device_id} onClick={() => saveEdit(d.device_id)}>Save</button>{" "}
+                        <button className="devlink" onClick={() => setEditing(null)}>Cancel</button>
                       </td>
                     </>
                   ) : (
@@ -203,13 +203,13 @@ export default function Devices() {
                         <span className={"sc-dot " + (d.online ? "sc-on" : "sc-off")} style={{ display: "inline-block", marginRight: 6 }} />
                         {d.online ? "Online" : "Offline"}
                       </td>
-                      <td>{d.last_seen ? new Date(d.last_seen).toLocaleString("id-ID") : "belum pernah"}</td>
+                      <td>{d.last_seen ? new Date(d.last_seen).toLocaleString("id-ID") : "never"}</td>
                     </>
                   )}
                   {isAdmin && editing !== d.device_id && (
                     <td>
                       <button className="devlink" onClick={() => startEdit(d)}>Edit</button>{" "}
-                      <button className="devlink" style={{ color: "var(--bahaya)" }} disabled={busy === d.device_id} onClick={() => del(d.device_id)}>Hapus</button>
+                      <button className="devlink" style={{ color: "var(--bahaya)" }} disabled={busy === d.device_id} onClick={() => del(d.device_id)}>Delete</button>
                     </td>
                   )}
                 </tr>

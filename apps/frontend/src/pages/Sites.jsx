@@ -60,7 +60,7 @@ export default function Sites() {
   }
 
   async function del(site_id) {
-    if (!window.confirm(`Hapus site "${site_id}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!window.confirm(`Delete site "${site_id}"? This action cannot be undone.`)) return;
     setBusy(site_id);
     setError(null);
     try {
@@ -76,32 +76,32 @@ export default function Sites() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Sites</h1>
-        {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => navigate("/admin/sites")}>+ Site Baru</button>}
+        {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => navigate("/admin/sites")}>+ New Site</button>}
       </div>
 
       <div className="panel" style={{ maxWidth: 1050, margin: "0 auto", padding: 20 }}>
         <div className="table-filters">
-          <input placeholder="Cari nama/site ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input placeholder="Search name/site ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">Semua status</option>
+            <option value="all">All statuses</option>
             <option value="normal">Normal</option>
-            <option value="siaga">Siaga</option>
-            <option value="bahaya">Bahaya</option>
+            <option value="siaga">Warning</option>
+            <option value="bahaya">Danger</option>
           </select>
           <span className="table-total">{filtered ? filtered.length : 0} / {slopes ? slopes.length : 0} site</span>
         </div>
 
         {error && <div className="admin-error" style={{ marginBottom: 12 }}>{error}</div>}
-        {!slopes && <div className="loading">Memuat…</div>}
-        {filtered && filtered.length === 0 && <div className="sc-row">Tidak ada site yang cocok filter.</div>}
+        {!slopes && <div className="loading">Loading…</div>}
+        {filtered && filtered.length === 0 && <div className="sc-row">No sites match the filters.</div>}
         {filtered && filtered.length > 0 && (
           <table className="devtable">
             <thead>
               <tr>
-                <th>Site ID</th><th>Nama</th><th>Status</th><th>Lat/Lon</th><th>Reading terakhir</th>
-                {isAdmin && <th>Aksi</th>}
+                <th>Site ID</th><th>Name</th><th>Status</th><th>Lat/Lon</th><th>Latest reading</th>
+                {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -121,8 +121,8 @@ export default function Sites() {
                       </td>
                       <td>{s.reading ? `${s.reading.value} ${s.reading.unit}` : "—"}</td>
                       <td>
-                        <button className="devlink" disabled={busy === s.site_id} onClick={() => saveEdit(s.site_id)}>Simpan</button>{" "}
-                        <button className="devlink" onClick={() => setEditing(null)}>Batal</button>
+                        <button className="devlink" disabled={busy === s.site_id} onClick={() => saveEdit(s.site_id)}>Save</button>{" "}
+                        <button className="devlink" onClick={() => setEditing(null)}>Cancel</button>
                       </td>
                     </>
                   ) : (
@@ -137,7 +137,7 @@ export default function Sites() {
                       {isAdmin && (
                         <td>
                           <button className="devlink" onClick={() => startEdit(s)}>Edit</button>{" "}
-                          <button className="devlink" style={{ color: "var(--bahaya)" }} disabled={busy === s.site_id} onClick={() => del(s.site_id)}>Hapus</button>
+                          <button className="devlink" style={{ color: "var(--bahaya)" }} disabled={busy === s.site_id} onClick={() => del(s.site_id)}>Delete</button>
                         </td>
                       )}
                     </>

@@ -48,7 +48,7 @@ function MiniScatter({ rows, field, label, unit, yLabel, helper }) {
         <strong>{label}</strong><span>{labelUtc(hover.t)}</span><b>{hover.v.toFixed(1)} {unit}</b>
       </div>}
     </div>
-    <div className="satellite-qa-footnote">Arahkan kursor atau fokuskan titik untuk melihat epoch dan nilainya.</div>
+    <div className="satellite-qa-footnote">Hover or focus a point to inspect its epoch and value.</div>
   </div>;
 }
 
@@ -114,7 +114,7 @@ export default function SatelliteQualityQA({ siteId, deviceId, window }) {
                 </div>
               ))}
             </div>
-            <div className="satellite-qa-footnote">Hover bar untuk lihat rentang C/N0 dan jumlah measurement.</div>
+            <div className="satellite-qa-footnote">Hover over a bar to inspect its C/N0 range and observation count.</div>
           </div>
 
           <div className="satellite-qa-card-item">
@@ -133,7 +133,7 @@ export default function SatelliteQualityQA({ siteId, deviceId, window }) {
                 </div>
               ))}
             </div>
-            <div className="satellite-qa-footnote">Hover row untuk lihat konstelasi dan jumlah measurement secara persis.</div>
+            <div className="satellite-qa-footnote">Hover over a row to inspect the constellation and exact observation count.</div>
           </div>
         </div>
         <small style={{ display: "block", marginTop: 16, opacity: .74, lineHeight: 1.5 }}>

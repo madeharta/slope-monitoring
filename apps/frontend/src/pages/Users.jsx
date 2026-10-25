@@ -20,7 +20,7 @@ export default function Users() {
   if (auth?.role !== "admin") {
     return (
       <div className="l2 pgdoc2-page">
-        <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button></div>
+        <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button></div>
         <div className="pgdoc2-card"><p>Halaman ini khusus role admin.</p></div>
       </div>
     );
@@ -84,9 +84,9 @@ export default function Users() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Users</h1>
-        <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ User Baru</button>
+        <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ New User</button>
       </div>
 
       <div className="panel" style={{ maxWidth: 950, margin: "0 auto", padding: 20 }}>
@@ -104,11 +104,11 @@ export default function Users() {
         )}
 
         {error && <div className="admin-error" style={{ marginBottom: 12 }}>{error}</div>}
-        {!users && !error && <div className="loading">Memuat…</div>}
+        {!users && !error && <div className="loading">Loading…</div>}
         {users && (
           <table className="devtable">
             <thead>
-              <tr><th>Email</th><th>Role</th><th>MFA</th><th>Status</th><th>Dibuat</th><th>Aksi</th></tr>
+              <tr><th>Email</th><th>Role</th><th>MFA</th><th>Status</th><th>Created</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {users.map((u) => (

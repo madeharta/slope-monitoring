@@ -41,8 +41,8 @@ export default function PanelChart({
 
     const axisBase = (a) => ({
       type: "value", name: a?.name, min: a?.min, max: a?.max,
-      nameTextStyle: { color: TXT, fontSize: axisFontSize, align: "left" }, nameGap: 8,
-      axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
+      nameTextStyle: { color: TXT, fontSize: 10, align: "center" }, nameLocation: "middle", nameGap: 44,
+      axisLine: { show: true, lineStyle: { color: RULE } }, axisTick: { show: true }, splitLine: { show: true, lineStyle: { color: GRID, opacity: 0.2 } },
       axisLabel: { color: AXLBL, fontSize: axisFontSize, fontFamily: "ui-monospace,monospace" },
     });
     const yAxis = [left ? { ...axisBase(left), position: "left" } : { show: false }];
@@ -102,11 +102,11 @@ export default function PanelChart({
 
     c.setOption({
       animation: false, backgroundColor: "transparent",
-      grid: { left: 54, right: right ? 52 : 20, top: 16, bottom: 24 },
+      grid: { left: 65, right: right ? 72 : 25, top: 31, bottom: 61 },
       xAxis: {
-        type: "time", axisLine: { lineStyle: { color: RULE } },
+        type: "time", name: "Time", nameLocation: "middle", nameGap: 42, nameTextStyle: { color: TXT, fontSize: 11 }, axisLine: { show: true, lineStyle: { color: RULE } },
         axisLabel: { color: TXT, fontSize: axisFontSize, hideOverlap: true, fontFamily: "ui-monospace,monospace" },
-        splitLine: { show: true, lineStyle: { color: GRID } }, axisTick: { show: false },
+        splitLine: { show: true, lineStyle: { color: GRID } }, axisTick: { show: true },
       },
       yAxis,
       series: es,

@@ -8,7 +8,7 @@ import PanelChart from "../components/PanelChart.jsx";
 import TimeToFailure, { estimateFailure } from "../components/TimeToFailure.jsx";
 import MeasurementTable from "../components/MeasurementTable.jsx";
 
-const LABEL = { bahaya: "Bahaya", siaga: "Siaga", normal: "Normal", unknown: "Belum terverifikasi" };
+const LABEL = { bahaya: "Danger", siaga: "Warning", normal: "Normal", unknown: "Not verified" };
 const HOURS = [["6h", 6], ["24h", 24], ["3d", 72], ["7d", 168]];
 // Derived-quantity thresholds that have no backend entry (velocity is computed
 // from the displacement series, so it is not in config.THRESHOLDS).
@@ -478,7 +478,7 @@ export default function SlopeDetail() {
 
   return (
     <div className="l2 l2detail">
-      <div role="status" style={{background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43"}}>DATA BELUM TERVALIDASI LAPANGAN. Seri displacement historis sebelum persetujuan baseline tidak ditampilkan; status bukan jaminan keselamatan.</div>
+      <div role="status" style={{background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43"}}>DATA NOT FIELD VALIDATED. Historical displacement series are not displayed before baseline approval; the displayed status does not guarantee safety.</div>
       {id === "ITB-STAGING-01" && ppkQaSummary.state === "ok" && ppkQaSummary.result?.total > 0 && (
         <section aria-label="Experimental PPK QA summary" style={{border:"1px solid #dbe3eb",borderRadius:10,padding:"12px 16px",margin:"12px 0",background:"var(--surface,#fff)"}}>
           <strong>PPK experimental QA · ROVER-B1-02</strong>
@@ -488,7 +488,7 @@ export default function SlopeDetail() {
             <span>SINGLE <b>{ppkQaSummary.result.counts.SINGLE}</b></span>
             <span>Total <b>{ppkQaSummary.result.total}</b></span>
           </div>
-          <small>PROVISIONAL_SPP · unvalidated · hasil riset, bukan displacement atau dasar alarm.</small>
+          <small>PROVISIONAL_SPP · unvalidated · research output, not operational displacement or an alarm basis.</small>
           <button style={{marginLeft:12}} onClick={() => navigate("/ppk")}>Detail QA →</button>
         </section>
       )}
@@ -522,7 +522,7 @@ export default function SlopeDetail() {
               value={customFrom}
               max={customTo || undefined}
               onChange={(e) => setCustomFrom(e.target.value)}
-              title="Dari"
+              title="From"
             />
             <span className="tabs-custom-sep">–</span>
             <input
@@ -532,14 +532,14 @@ export default function SlopeDetail() {
               min={customFrom || undefined}
               max={new Date(Date.now() - Date.now() % 60000).toISOString().slice(0, 16)}
               onChange={(e) => setCustomTo(e.target.value)}
-              title="Sampai"
+              title="Until"
             />
           </span>
         </div>
       </div>
 
       <div className="detail-view-switch" role="group" aria-label="Detail view">
-        <button className={detailView === "charts" ? "on" : ""} onClick={() => setDetailView("charts")}>Grafik</button>
+        <button className={detailView === "charts" ? "on" : ""} onClick={() => setDetailView("charts")}>Charts</button>
         <button className={detailView === "table" ? "on" : ""} onClick={() => setDetailView("table")}>Data Table</button>
       </div>
 
@@ -595,14 +595,14 @@ export default function SlopeDetail() {
       {/* stat cards */}
       <div className="statcard-row">
         {hasDisplacementSeries && <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />}
-        {hasTiltSeries && <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="deg · saat ledakan terakhir (bukan real-time)" status={statusFor(th.tilt_x, tiltNow)} />}
+        {hasTiltSeries && <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="degrees · at last blast (not real-time)" status={statusFor(th.tilt_x, tiltNow)} />}
         {hasVelocitySeries && <StatCard
           label="Slope velocity"
           value={fmt(velNow, 1)}
           sub={`mm/day · derived QA only · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`}
           status={velStatus}
         />}
-        <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (bukan sensor lapangan)" status="normal" />
+        <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (not an on-site sensor)" status="normal" />
       </div>
 
       {/* analytics grid */}
@@ -781,20 +781,20 @@ export default function SlopeDetail() {
             piezometer/soil-moisture berkedalaman di hardware sistem ini),
             jadi panelnya selalu kosong tanpa penjelasan. Diganti jadi
             panel jujur yang menyatakan sensor apa yang BENAR-BENAR ada. */}
-        <Panel title="Sensor Coverage" sub="hardware terpasang">
+        <Panel title="Sensor Coverage" sub="installed hardware">
           <div className="sensor-coverage" style={{ padding: "12px 18px 14px" }}>
             <div className="sc-row"><span className="sc-dot sc-on" />GNSS RTK (ZED-F9P-15B) — displacement</div>
-            <div className="sc-row"><span className="sc-dot sc-on" />Accelerometer (ADXL355 / MPU9250) — tilt &amp; vibrasi</div>
-            <div className="sc-row"><span className="sc-dot sc-off" />Piezometer / soil moisture — tidak terpasang</div>
-            <div className="sc-row"><span className="sc-dot sc-off" />Rain gauge lapangan — tidak terpasang (curah hujan dari Open-Meteo)</div>
+            <div className="sc-row"><span className="sc-dot sc-on" />Accelerometer (ADXL355 / MPU9250) — tilt &amp; vibration</div>
+            <div className="sc-row"><span className="sc-dot sc-off" />Piezometer / soil moisture — not installed</div>
+            <div className="sc-row"><span className="sc-dot sc-off" />On-site rain gauge — not installed (rainfall provided by Open-Meteo)</div>
           </div>
         </Panel>
 
         {/* Devices di site ini (2026-09-20, baru) */}
         <Panel title="Devices" sub={id}>
           <div className="sensor-coverage" style={{ padding: "12px 18px 14px" }}>
-            {!siteDevices && <div className="sc-row">Memuat…</div>}
-            {siteDevices && siteDevices.length === 0 && <div className="sc-row">Belum ada device terdaftar di site ini.</div>}
+            {!siteDevices && <div className="sc-row">Loading…</div>}
+            {siteDevices && siteDevices.length === 0 && <div className="sc-row">No devices registered at this site.</div>}
             {siteDevices && siteDevices.map((d) => (
               <div key={d.device_id} className="sc-row">
                 <span className={"sc-dot " + (d.online ? "sc-on" : "sc-off")} />

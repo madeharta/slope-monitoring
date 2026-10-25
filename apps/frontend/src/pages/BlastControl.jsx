@@ -86,7 +86,7 @@ export default function BlastControl() {
     if (!baseId) return;
 
     refreshConfig(baseId).catch((err) => {
-      setError(err?.message || "Gagal membaca config BASE.");
+      setError(err?.message || "Failed to read BASE configuration.");
     });
   }, [baseId]);
 
@@ -96,7 +96,7 @@ export default function BlastControl() {
     const timeout = Number(timeoutMinutes);
 
     if (!Number.isInteger(timeout) || timeout <= 0) {
-      setError("TimeOutTrigger harus bilangan bulat lebih dari 0 menit.");
+      setError("TimeOutTrigger must be an integer greater than zero minutes.");
       return;
     }
 
@@ -104,7 +104,7 @@ export default function BlastControl() {
       `Kirim blast trigger request ke ${baseId}?\n\n` +
       `TimeOutTrigger: ${timeout} menit\n\n` +
       "Catatan: ini hanya menyatakan server menyimpan command. " +
-      "Bukan bukti rover sudah ARMED."
+      "This is not evidence that the rover is ARMED."
     );
 
     if (!confirmed) return;
@@ -134,12 +134,12 @@ export default function BlastControl() {
       setMessage(
         `TRIGGER REQUESTED · command #${body.command_id ?? "—"}. ` +
         "TriggerStart dan TimeOutTrigger sekarang tersimpan di server. " +
-        "BASE akan menerima config dari response upload berikutnya atau GET /api/config."
+        "BASE receives configuration from its next upload response or GET /api/config."
       );
 
       await refreshConfig();
     } catch (err) {
-      setError(err?.message || "Gagal membuat blast trigger request.");
+      setError(err?.message || "Failed to create blast trigger request.");
     } finally {
       setBusy(false);
     }
@@ -182,7 +182,7 @@ export default function BlastControl() {
 
       await refreshConfig();
     } catch (err) {
-      setError(err?.message || "Gagal reset TriggerStart.");
+      setError(err?.message || "Failed to reset TriggerStart.");
     } finally {
       setBusy(false);
     }
@@ -192,7 +192,7 @@ export default function BlastControl() {
     <div className="l2 pgdoc2-page blast-page">
       <div className="l2head">
         <button className="pgdoc-back" onClick={() => navigate("/")}>
-          ← Kembali
+          ← Back
         </button>
 
         <div>
@@ -200,8 +200,8 @@ export default function BlastControl() {
             Blast Control — LoRa v1.6
           </h1>
           <div className="sub">
-            Web/server bertanggung jawab sampai BASE menerima config.
-            Distribusi trigger dari BASE ke rover melalui LoRa adalah ranah ITB.
+            The web/server is responsible until BASE receives the configuration.
+            Trigger distribution from BASE to rovers over LoRa is managed by ITB.
           </div>
         </div>
       </div>
@@ -210,7 +210,7 @@ export default function BlastControl() {
         <strong>COMMAND STATE ≠ FIELD ACKNOWLEDGEMENT</strong>
         <span>
           TriggerStart=1 berarti command sudah tersimpan di server.
-          Itu belum membuktikan rover sudah menerima trigger, ARMED,
+          This does not prove that the rover has received the trigger or is ARMED,
           mendeteksi blast, atau selesai merekam.
         </span>
       </div>
@@ -233,7 +233,7 @@ export default function BlastControl() {
               value={siteId}
               onChange={(e) => setSiteId(e.target.value)}
             >
-              <option value="">— pilih site —</option>
+              <option value="">— select site —</option>
 
               {sites.map((site) => (
                 <option key={site} value={site}>
@@ -249,7 +249,7 @@ export default function BlastControl() {
           </label>
 
           <label>
-            <span>TimeOutTrigger · menit</span>
+            <span>TimeOutTrigger · minutes</span>
             <input
               type="number"
               min="1"
@@ -322,7 +322,7 @@ export default function BlastControl() {
             disabled={!baseId || busy}
             onClick={() =>
               refreshConfig().catch((err) =>
-                setError(err?.message || "Gagal membaca config BASE.")
+                setError(err?.message || "Failed to read BASE configuration.")
               )
             }
           >
@@ -370,7 +370,7 @@ operator START / TriggerStart = 1
 SERVER simpan config BASE
 ↓
 BASE menerima TriggerStart + TimeOutTrigger
-dari response upload berikutnya / GET /api/config
+from the next upload response / GET /api/config
 ↓
 ========== START RANAH ITB ==========
 BASE kirim trigger via LoRa

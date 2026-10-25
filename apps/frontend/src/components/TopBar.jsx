@@ -215,7 +215,7 @@ export default function TopBar() {
                 Aktifkan / Kelola MFA (2FA)
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/panduan"); }}>
-                Panduan Penggunaan
+                User Guide
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); window.open("mailto:support@namadomain.id"); }}>
                 Bantuan

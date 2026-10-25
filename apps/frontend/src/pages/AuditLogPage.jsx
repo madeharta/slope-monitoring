@@ -34,7 +34,7 @@ export default function AuditLogPage() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Audit Log</h1>
       </div>
 
@@ -51,13 +51,13 @@ export default function AuditLogPage() {
         </div>
 
         {error && <div className="admin-error">{error}</div>}
-        {!entries && !error && <div className="loading">Memuat…</div>}
-        {entries && entries.length === 0 && <div className="sc-row">Tidak ada catatan yang cocok.</div>}
+        {!entries && !error && <div className="loading">Loading…</div>}
+        {entries && entries.length === 0 && <div className="sc-row">No matching log entries.</div>}
         {entries && entries.length > 0 && (
           <>
             <table className="devtable">
               <thead>
-                <tr><th>Waktu</th><th>Aksi</th><th>Target</th><th>Oleh</th></tr>
+                <tr><th>Time</th><th>Actions</th><th>Target</th><th>By</th></tr>
               </thead>
               <tbody>
                 {entries.map((e) => (
@@ -72,7 +72,7 @@ export default function AuditLogPage() {
             </table>
 
             <div className="table-pager">
-              <button className="admin-btn" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>← Sebelumnya</button>
+              <button className="admin-btn" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>← Previous</button>
               <span>Halaman {page + 1} dari {totalPages}</span>
               <button className="admin-btn" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Berikutnya →</button>
             </div>

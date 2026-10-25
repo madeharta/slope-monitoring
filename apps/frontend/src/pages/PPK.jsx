@@ -64,7 +64,7 @@ export default function PPK() {
       if (!response.ok) throw new Error(body?.detail || `HTTP ${response.status}`);
       setPayload(body);
     } catch (err) {
-      setError(err?.message || "Gagal memuat data PPK");
+      setError(err?.message || "Failed to load data PPK");
     } finally {
       setLoading(false);
     }
@@ -105,16 +105,16 @@ export default function PPK() {
   return (
     <div className="l2 pgdoc2-page ppk-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 650 }}>PPK Technical Results</h1>
-          <div className="sub">RTKLIB solution contract, quality, dan provenance · bukan acceptance displacement produksi</div>
+          <div className="sub">RTKLIB solution contract, quality, and provenance · not production displacement acceptance</div>
         </div>
       </div>
 
       <div className="ppk-warning" role="status">
         <strong>UNVALIDATED</strong>
-        <span>Data PPK di halaman ini hanya untuk QA/riset. Jangan gunakan sebagai alarm operasional, instruksi evakuasi, atau bukti displacement produksi sampai production geodetic acceptance selesai.</span>
+        <span>PPK data on this page are for research and QA only. Do not use them for operational alarms, evacuation instructions, or production displacement claims until production geodetic acceptance is complete.</span>
       </div>
 
       <div className="panel ppk-filter-panel">
@@ -125,7 +125,7 @@ export default function PPK() {
         <label>
           <span>Rover ID</span>
           <select value={roverId} onChange={(e) => setRoverId(e.target.value)} aria-label="Rover ID">
-            <option value="" disabled>Pilih rover</option>
+            <option value="" disabled>Select rover</option>
             {[...new Set([...roverOptions, ...(roverId ? [roverId] : [])])].map(id=><option key={id} value={id}>{id}</option>)}
           </select>
         </label>
@@ -145,9 +145,9 @@ export default function PPK() {
           </select>
         </label>
         <button className="admin-btn ppk-refresh" disabled={loading} onClick={load}>
-          {loading ? "Memuat…" : "Refresh"}
+          {loading ? "Loading…" : "Refresh"}
         </button>
-        <div className="ppk-load-note">Tidak ada auto-polling; refresh manual untuk menghindari beban API yang tidak perlu.</div>
+        <div className="ppk-load-note">No automatic polling. Refresh manually to avoid unnecessary API load.</div>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -166,12 +166,12 @@ export default function PPK() {
       <div className="ppk-grid ppk-grid--four">
         <section className="panel ppk-card">
           <div className="ppk-card-head">
-            <div><h2>Solution quality</h2><span>{rows.length} epoch dari query saat ini</span></div>
+            <div><h2>Solution quality</h2><span>{rows.length} epochs from the current query</span></div>
           </div>
           {rows.length === 0 ? (
             <div className="ppk-empty">
-              <strong>Belum ada persisted PPK solution.</strong>
-              <span>Empty state ini valid. UI tidak membuat synthetic displacement hanya agar grafik terlihat terisi.</span>
+              <strong>No persisted PPK solutions available.</strong>
+              <span>An empty result is valid. The UI does not fabricate displacement data to populate charts.</span>
             </div>
           ) : (
             <>
@@ -194,7 +194,7 @@ export default function PPK() {
         <section className="panel ppk-card">
           <div className="ppk-card-head"><div><h2>Latest persisted solution</h2><span>Absolute ellipsoidal position · technical only</span></div></div>
           {!latest ? (
-            <div className="ppk-empty"><span>Tidak ada row untuk ditampilkan.</span></div>
+            <div className="ppk-empty"><span>No rows to display.</span></div>
           ) : (
             <div className="ppk-latest">
               <div><span>Time</span><b>{fmtTime(latest.time)}</b></div>
@@ -249,7 +249,7 @@ export default function PPK() {
       </section>
 
       <section className="panel ppk-card">
-        <div className="ppk-card-head"><div><h2>Reproducibility provenance</h2><span>SHA256 chain dari row terbaru</span></div></div>
+        <div className="ppk-card-head"><div><h2>Reproducibility provenance</h2><span>SHA-256 chain from the latest row</span></div></div>
         {!latest ? (
           <div className="ppk-empty"><span>Provenance akan muncul setelah persisted solution tersedia.</span></div>
         ) : (
@@ -265,7 +265,7 @@ export default function PPK() {
       </details>
       <details className="panel ppk-card ppk-method-note">
         <summary>Data Limitations &amp; Interpretation</summary>
-        <p><b>Base-reference type dan source/receiver time-integrity tidak dipersist oleh endpoint <code>ppk.solution.v1</code> saat ini.</b> Halaman ini sengaja tidak menebak atau mengisi nilai tersebut. Evidence engine acceptance harus dibaca dari acceptance artifact, sedangkan production acceptance tetap memerlukan surveyed BASE-01 ellipsoidal coordinates.</p>
+        <p><b>Base-reference type and source/receiver time integrity are not persisted by endpoint <code>ppk.solution.v1</code> saat ini.</b> This page deliberately does not infer or fabricate nilai tersebut. Evidence engine acceptance harus dibaca dari acceptance artifact, sedangkan production acceptance tetap memerlukan surveyed BASE-01 ellipsoidal coordinates.</p>
       </details>
     </div>
   );

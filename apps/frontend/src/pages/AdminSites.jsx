@@ -20,7 +20,7 @@ export default function AdminSites() {
   if (auth?.role !== "admin") {
     return (
       <div className="l2 pgdoc2-page">
-        <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button></div>
+        <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button></div>
         <div className="pgdoc2-card"><p>Halaman ini khusus role admin.</p></div>
       </div>
     );
@@ -60,8 +60,8 @@ export default function AdminSites() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
-        <h1 style={{ fontSize: 18, fontWeight: 650 }}>Registrasi Site Baru</h1>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
+        <h1 style={{ fontSize: 18, fontWeight: 650 }}>Register New Site</h1>
       </div>
 
       <div className="pgdoc2-card">
@@ -72,7 +72,7 @@ export default function AdminSites() {
 
         <div className="admin-form">
           <label>Site ID<input value={form.site_id} onChange={set("site_id")} placeholder="SITE-B" /></label>
-          <label>Nama<input value={form.name} onChange={set("name")} placeholder="Lereng B" /></label>
+          <label>Name<input value={form.name} onChange={set("name")} placeholder="Lereng B" /></label>
           <label>Latitude<input value={form.lat} onChange={set("lat")} onBlur={checkNearby} placeholder="-6.2" /></label>
           <label>Longitude<input value={form.lon} onChange={set("lon")} onBlur={checkNearby} placeholder="106.8" /></label>
 
@@ -80,7 +80,7 @@ export default function AdminSites() {
             <div className="admin-warn">
               <strong>⚠ Site terdekat ditemukan:</strong>
               <ul>{nearby.map((n) => <li key={n.site_id}>{n.name} ({n.site_id}) — {n.distance_m.toFixed(0)}m</li>)}</ul>
-              Pastikan ini memang lokasi berbeda sebelum lanjut.
+              Confirm that this is a separate physical location before continuing.
             </div>
           )}
 

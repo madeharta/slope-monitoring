@@ -1,4 +1,4 @@
-// Panduan Penggunaan — REVISI 2026-09-20 (kedua kalinya, per klarifikasi):
+// User Guide — REVISI 2026-09-20 (kedua kalinya, per klarifikasi):
 // sebelumnya seluruh halaman putih, keluar total dari tema dashboard.
 // Sekarang: latar TETAP ikut style dashboard eksis (dark, `.l2`, TopBar
 // global) — cuma BAGIAN TEKS yang dibungkus kartu putih, supaya tetap
@@ -13,12 +13,12 @@ export default function PanduanPenggunaan() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate(-1)}>← Kembali</button>
-        <h1 style={{ fontSize: 18, fontWeight: 650 }}>Panduan Penggunaan</h1>
+        <button className="pgdoc-back" onClick={() => navigate(-1)}>← Back</button>
+        <h1 style={{ fontSize: 18, fontWeight: 650 }}>User Guide</h1>
       </div>
 
       <div className="pgdoc2-card">
-        <h1>Panduan Penggunaan MAGRIS LEWS</h1>
+        <h1>User Guide MAGRIS LEWS</h1>
         <p className="pgdoc-lead">
           Ringkasan cara pakai dashboard pemantauan lereng dan peledakan.
         </p>
@@ -35,8 +35,8 @@ export default function PanduanPenggunaan() {
         <p>Setiap lereng diberi satu dari tiga status, ditentukan oleh pembacaan sensor terhadap ambang batas yang sudah dikonfigurasi:</p>
         <ul>
           <li><strong className="pgdoc-normal">Normal</strong> — dalam batas aman, tidak perlu tindakan.</li>
-          <li><strong className="pgdoc-siaga">Siaga</strong> — mendekati ambang batas, pantau lebih sering.</li>
-          <li><strong className="pgdoc-bahaya">Bahaya</strong> — melewati ambang batas, perlu tindakan lapangan segera.</li>
+          <li><strong className="pgdoc-siaga">Warning</strong> — mendekati ambang batas, pantau lebih sering.</li>
+          <li><strong className="pgdoc-bahaya">Danger</strong> — melewati ambang batas, perlu tindakan lapangan segera.</li>
         </ul>
 
         <h2>Membaca halaman detail lereng</h2>
@@ -50,7 +50,7 @@ export default function PanduanPenggunaan() {
           <li><strong>Slope velocity</strong> — laju perubahan displacement (mm/hari), dihitung dari data GNSS, bukan sensor terpisah.</li>
           <li><strong>Rainfall, trailing 24h</strong> — curah hujan 24 jam terakhir dari Open-Meteo (data cuaca eksternal — sistem ini <em>tidak</em> punya rain gauge fisik).</li>
           <li><strong>Time to Failure</strong> — estimasi waktu keruntuhan berbasis proyeksi inverse-velocity, hanya muncul kalau lereng benar-benar sedang mempercepat pergerakannya.</li>
-          <li><strong>Sensor Coverage</strong> — daftar sensor yang benar-benar terpasang di lokasi ini.</li>
+          <li><strong>Sensor Coverage</strong> — list of sensors actually installed at this site.</li>
         </ul>
 
         <h2>Indikator Live / Offline</h2>
@@ -60,25 +60,26 @@ export default function PanduanPenggunaan() {
           data terbaru secara real-time.
         </p>
 
-        <h2>Ganti tema tampilan</h2>
+        <h2>Change display theme</h2>
         <p>
-          Tombol <strong>Editorial</strong>/<strong>ISA-101</strong> di kanan atas
-          mengganti palet warna dashboard — Editorial (hangat, sepia) untuk
-          presentasi, ISA-101 (abu-abu netral) untuk pemantauan jangka
-          panjang di ruang kontrol.
+          Use the <strong>Editorial</strong>/<strong>ISA-101</strong> toggle in the
+          top-right corner to change the dashboard color palette. Editorial
+          uses warm, sepia tones suitable for presentations, while ISA-101
+          uses neutral gray tones for long-term control room monitoring.
         </p>
 
-        <h2>Profil &amp; keluar</h2>
+        <h2>Profile &amp; Sign Out</h2>
         <p>
-          Klik avatar (inisial) di kanan atas untuk melihat email/role
-          akun Anda, atau untuk <strong>Keluar</strong>. Sesi otomatis berakhir
-          setelah 15 menit.
+          Click your avatar (initials) in the top-right corner to view your
+          account email and role, or select <strong>Sign Out</strong>.
+          The session automatically expires after 15 minutes.
         </p>
 
-        <h2>Batasan yang perlu diketahui</h2>
+        <h2>Known limitations</h2>
         <p>
-          Verifikasi MFA belum terhubung ke alur login (baru tersedia lewat
-          API), dan sesi login belum diperpanjang otomatis.
+          MFA verification is not yet integrated into the login flow
+          (currently available through the API), and login sessions
+          are not automatically renewed.
         </p>
       </div>
     </div>

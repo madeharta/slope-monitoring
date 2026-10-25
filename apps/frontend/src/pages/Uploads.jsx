@@ -52,7 +52,7 @@ export default function Uploads() {
         setRows(body.uploads || []);
         setTotal(body.total || 0);
       })
-      .catch((e) => alive && setError(e.message || "Gagal memuat upload history"))
+      .catch((e) => alive && setError(e.message || "Failed to load upload history"))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, [authFetch, deviceId, dataType, mode, status, fileName, offset]);
@@ -78,7 +78,7 @@ export default function Uploads() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e.message || "Gagal mengunduh original CSV");
+      setError(e.message || "Failed to download original CSV");
     } finally {
       setDownloading("");
     }
@@ -90,30 +90,30 @@ export default function Uploads() {
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 650 }}>Upload History</h1>
-          <div className="sub">QA file yang diterima server · original CSV hanya tersedia untuk upload setelah raw-retention aktif</div>
+          <div className="sub">QA files accepted by the server · Original CSV files are available only for uploads after raw retention was enabled</div>
         </div>
       </div>
 
       <div className="panel uploads-panel">
         <div className="table-filters">
-          <input placeholder="Cari file name" value={fileName} onChange={(e) => setFileName(e.target.value)} />
+          <input placeholder="Search filename" value={fileName} onChange={(e) => setFileName(e.target.value)} />
           <input list="upload-devices" placeholder="Device ID" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} />
           <datalist id="upload-devices">{devices.map((id) => <option key={id} value={id} />)}</datalist>
           <select value={dataType} onChange={(e) => setDataType(e.target.value)}>
-            <option value="">Semua tipe</option>
+            <option value="">All types</option>
             <option value="gnss">GNSS</option>
             <option value="accel">Accel</option>
           </select>
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="">Semua mode</option>
+            <option value="">All modes</option>
             <option value="4g">4G</option>
             <option value="lora">LoRa</option>
           </select>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Semua status</option>
+            <option value="">All statuses</option>
             <option value="processed">Processed</option>
             <option value="processing">Processing</option>
             <option value="failed">Failed</option>
@@ -123,16 +123,16 @@ export default function Uploads() {
         </div>
 
         {error && <div className="admin-error">{error}</div>}
-        {loading && !rows.length && <div className="loading">Memuat…</div>}
-        {!loading && rows.length === 0 && <div className="sc-row">Belum ada upload yang cocok.</div>}
+        {loading && !rows.length && <div className="loading">Loading…</div>}
+        {!loading && rows.length === 0 && <div className="sc-row">No matching uploads.</div>}
 
         {rows.length > 0 && (
           <div className="uploads-scroll">
             <table className="devtable uploads-table">
               <thead>
                 <tr>
-                  <th>Diterima</th><th>File</th><th>Device / Site</th><th>Mode</th><th>Tipe</th>
-                  <th>Records</th><th>Status</th><th>Original</th><th>SHA256</th><th>Aksi</th>
+                  <th>Received</th><th>File</th><th>Device / Site</th><th>Mode</th><th>Type</th>
+                  <th>Records</th><th>Status</th><th>Original</th><th>SHA256</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -150,13 +150,13 @@ export default function Uploads() {
                       </span>
                       {row.last_error && <div className="upload-error" title={row.last_error}>{row.last_error}</div>}
                     </td>
-                    <td>{row.original_available ? formatBytes(row.byte_length) : <span className="sub">legacy / tidak tersimpan</span>}</td>
+                    <td>{row.original_available ? formatBytes(row.byte_length) : <span className="sub">legacy / not stored</span>}</td>
                     <td title={row.sha256 || ""}><code>{row.sha256 ? `${row.sha256.slice(0, 12)}…` : "—"}</code></td>
                     <td>
                       <button
                         className="admin-btn upload-download-btn"
                         disabled={!row.original_available || !canDownloadOriginal || downloading === row.file_name}
-                        title={!row.original_available ? "Original CSV belum disimpan untuk upload lama" : (!canDownloadOriginal ? "Butuh role operator/admin" : "Download exact original CSV")}
+                        title={!row.original_available ? "Original CSV was not retained for older uploads" : (!canDownloadOriginal ? "Operator or administrator role required" : "Download exact original CSV")}
                         onClick={() => downloadOriginal(row)}
                       >
                         {downloading === row.file_name ? "Mengunduh…" : "Download CSV"}
@@ -170,7 +170,7 @@ export default function Uploads() {
         )}
 
         <div className="table-pager">
-          <button className="admin-btn upload-pager-btn" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Sebelumnya</button>
+          <button className="admin-btn upload-pager-btn" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Previous</button>
           <button className="admin-btn upload-pager-btn" disabled={offset + PAGE_SIZE >= total || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>Berikutnya →</button>
         </div>
       </div>

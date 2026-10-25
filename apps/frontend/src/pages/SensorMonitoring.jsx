@@ -392,18 +392,18 @@ export default function SensorMonitoring() {
   async function applyFilters() {
     const next = { ...draft };
     if (next.source === SOURCE_ACTUAL && (!next.siteId || !next.deviceId)) {
-      setError("Pilih Site dan Device sebelum Apply filters.");
+      setError("Select a site and device before applying filters.");
       return;
     }
 
     if (next.range === "custom") {
       const apiWindow = actualApiWindow(next);
       if (!apiWindow.from || !apiWindow.to) {
-        setError("Custom time range membutuhkan From dan To yang valid.");
+        setError("A custom time range requires valid From and To timestamps.");
         return;
       }
       if (new Date(apiWindow.from) >= new Date(apiWindow.to)) {
-        setError("Custom time range: From harus lebih awal daripada To.");
+        setError("Custom time range: From must precede To.");
         return;
       }
     }
@@ -493,7 +493,7 @@ export default function SensorMonitoring() {
       setApplied(next);
       setLastAppliedAt(new Date());
     } catch (e) {
-      setError(e.message || "Gagal memuat sensor data.");
+      setError(e.message || "Failed to load sensor data.");
     } finally {
       setBusy(false);
     }
@@ -536,7 +536,7 @@ export default function SensorMonitoring() {
         });
       }
     } catch (e) {
-      setError(e.message || "Gagal memuat waveform.");
+      setError(e.message || "Failed to load waveform.");
     } finally {
       setWaveBusy(false);
     }
@@ -575,7 +575,7 @@ export default function SensorMonitoring() {
   return (
     <div className="l2 pgdoc2-page sensor-page sensor-v2">
       <div className="l2head sensor-v2-head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <div>
           <h1>Sensor Monitoring</h1>
           <div className="sub">
@@ -619,7 +619,7 @@ export default function SensorMonitoring() {
                   deviceId: "",
                 }))}
               >
-                <option value="">— pilih site —</option>
+                <option value="">— select site —</option>
                 {actualSites.map((s) => <option key={s}>{s}</option>)}
               </select>
             ) : (
@@ -846,7 +846,7 @@ export default function SensorMonitoring() {
             ))}
             {selectedRawxDevice && <div className="sensor-rawx-unified-divider" />}
             {!selectedRawxDevice && (
-              <p className="sensor-v2-note" role="status">GNSS RAWX perangkat terpilih tidak tersedia pada rentang waktu ini. Timeline berikut membandingkan perangkat lain di site yang sama; coba pilih rentang waktu lebih panjang.</p>
+              <p className="sensor-v2-note" role="status">GNSS RAWX is unavailable for the selected device and time range. Timeline berikut membandingkan perangkat lain di site yang sama; coba pilih rentang waktu lebih panjang.</p>
             )}
             <div className="sensor-v2-section-head"><div>
               <span className="sensor-v2-eyebrow">Availability · site-wide comparison</span>

@@ -50,7 +50,7 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
         return body;
       })
       .then((body) => { if (alive) setData({ rows: body.rows || [], total: body.total || 0 }); })
-      .catch((e) => { if (alive) setError(e.message || "Gagal memuat data"); })
+      .catch((e) => { if (alive) setError(e.message || "Failed to load data"); })
       .finally(() => {
         if (alive) {
           setLoading(false);
@@ -88,17 +88,17 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
       </div>
       <div className="mt-toolbar">
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
-          <option value="">Semua device</option>
+          <option value="">All devices</option>
           {devices.map((d) => <option key={d.device_id} value={d.device_id}>{d.device_id}</option>)}
         </select>
         <select value={sourceKind} onChange={(e) => setSourceKind(e.target.value)}>
-          <option value="">Semua source</option>
+          <option value="">All sources</option>
           <option value="device">Device</option>
           <option value="external">External</option>
           <option value="derived">Derived</option>
         </select>
         <select value={validationStatus} onChange={(e) => setValidationStatus(e.target.value)}>
-          <option value="">Semua validasi</option>
+          <option value="">All validation states</option>
           <option value="unverified">Unverified</option>
           <option value="provisional">Provisional</option>
           <option value="validated">Validated</option>
@@ -127,12 +127,12 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
           <tbody>
             {loading && data.rows.length === 0 && (
               <tr>
-                <td colSpan="11">Memuat…</td>
+                <td colSpan="11">Loading…</td>
               </tr>
             )}
             {!loading && !data.rows.length && (
               <tr>
-                <td colSpan="11">Belum ada measurement untuk filter ini.</td>
+                <td colSpan="11">No measurements match the selected filters.</td>
               </tr>
             )}
             {data.rows.map((r, i) => (
@@ -162,7 +162,7 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
         </table>
       </div>
       <div className="mt-pager">
-        <button disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Sebelumnya</button>
+        <button disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Previous</button>
         <button disabled={offset + PAGE_SIZE >= data.total || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>Berikutnya →</button>
       </div>
     </section>

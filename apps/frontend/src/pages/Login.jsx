@@ -49,7 +49,7 @@ export default function Login() {
       </div>
 
       <form onSubmit={handleSubmit} className="login-card">
-        <h1>Masuk</h1>
+        <h1>Sign In</h1>
         <p className="login-sub">Slope &amp; Blast Monitoring Console</p>
 
         <label className="login-field">
@@ -88,7 +88,7 @@ export default function Login() {
         {error && <div className="login-error" role="alert">{error}</div>}
 
         <button type="submit" className="login-submit" disabled={submitting}>
-          {submitting ? "Masuk…" : "Masuk"}
+          {submitting ? "Signing In…" : "Sign In"}
         </button>
       </form>
     </div>

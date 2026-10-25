@@ -6,7 +6,7 @@ import { getPalette } from "../theme";
 import { useAuth } from "../context/AuthContext.jsx";
 import SiteMap from "../components/SiteMap.jsx";
 
-const LABEL = { bahaya: "Bahaya", siaga: "Siaga", normal: "Normal", unknown: "Belum terverifikasi" };
+const LABEL = { bahaya: "Danger", siaga: "Warning", normal: "Normal", unknown: "Not verified" };
 const SCOL = { bahaya: "var(--bahaya)", siaga: "var(--siaga)", normal: "var(--ok)", unknown: "#8b8c96" };
 const SRING = { bahaya: "var(--bahaya-soft)", siaga: "var(--siaga-soft)", normal: "transparent", unknown: "transparent" };
 
@@ -213,13 +213,13 @@ export default function Overview() {
     return haversineKm(userPos.lat, userPos.lon, sa.lat, sa.lon) - haversineKm(userPos.lat, userPos.lon, sb.lat, sb.lon);
   }).slice(0, 2);
   const weatherObservedAt = (value) => {
-    if (!value) return "Waktu observasi tidak tersedia";
+    if (!value) return "Observation time unavailable";
     const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? "Waktu observasi tidak valid" : parsed.toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" }) + " WIB";
+    return Number.isNaN(parsed.getTime()) ? "Invalid observation time" : parsed.toLocaleString("en-GB", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" }) + " WIB";
   };
   const weatherAgeLabel = (value) => {
     const t = Date.parse(value || "");
-    if (!Number.isFinite(t)) return "HISTORICAL · waktu tidak diketahui";
+    if (!Number.isFinite(t)) return "HISTORICAL · time unknown";
     const age = Date.now() - t;
     return age >= 0 && age <= 30 * 60 * 1000 ? "LAST OBSERVED" : "HISTORICAL / STALE";
   };
@@ -227,7 +227,7 @@ export default function Overview() {
   const wxNumber = (value, digits = 1) => {
     if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return "—";
     const rounded = Number(Number(value).toFixed(digits));
-    return new Intl.NumberFormat("id-ID", { maximumFractionDigits: digits }).format(rounded);
+    return new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits }).format(rounded);
   };
 
   return (
@@ -237,7 +237,7 @@ export default function Overview() {
 
       {/* LEFT — editorial headline + active-alarm cards, floating over the map */}
       <div className="ov-left">
-        <div className="ov-validation" role="status"><strong>RESEARCH · UNVALIDATED</strong> — Alarm operasional dan instruksi tindakan belum aktif sampai validasi lapangan, PPK, dan baseline disetujui.</div>
+        <div className="ov-validation" role="status"><strong>RESEARCH · UNVALIDATED</strong> — Operational alarms and response instructions remain disabled until field, PPK, and baseline validation are approved.</div>
         <div className="ov-eyebrow">ALL SLOPES <span>({slopes.length})</span></div>
         <button className="ov-title" onClick={() => setWarnOpen((o) => !o)} aria-expanded={warnOpen}>
           Operational alerts <span className="ov-count">({warnings})</span>
@@ -248,8 +248,8 @@ export default function Overview() {
             {alerts.length === 0 && (
               <div className="ov-empty">
                 {operationalReady
-                  ? "Tidak ada alarm operasional aktif; bukan bukti kondisi lereng aman."
-                  : "Alarm operasional disuppress sampai validation acceptance disetujui."}
+                  ? "No active operational alarms. This does not confirm slope safety."
+                  : "Operational alarms are suppressed pending validation acceptance."}
               </div>
             )}
             {alerts.map((s) => (
@@ -281,8 +281,8 @@ export default function Overview() {
         <div className="fstat"><span className="fs-v">{deviceHealth.online}<i>/{deviceHealth.total}</i></span><span className="fs-k">Devices online</span></div>
         <div className="fstat"><span className="fs-v warn">{deviceHealth.stale}</span><span className="fs-k">Devices stale</span></div>
         <div className="fstat"><span className="fs-v">{deviceHealth.offline + deviceHealth.unknown}</span><span className="fs-k">Offline / unknown</span></div>
-        <div className="fstat"><span className="fs-v warn">{c.siaga}</span><span className="fs-k">Teknis Siaga</span></div>
-        <div className="fstat"><span className="fs-v crit">{c.bahaya}</span><span className="fs-k">Teknis Bahaya</span></div>
+        <div className="fstat"><span className="fs-v warn">{c.siaga}</span><span className="fs-k">Technical Warning</span></div>
+        <div className="fstat"><span className="fs-v crit">{c.bahaya}</span><span className="fs-k">Technical Danger</span></div>
       </div>
 
       {/* RIGHT — status summary + live graphs (moved here from the old slide panel) */}
@@ -298,18 +298,18 @@ export default function Overview() {
         <div className="wcard ppk-overview-card">
           <div className="wcard-h"><h3>PPK engine QA · ROVER-B1-02</h3><span className="wgic" title="Experimental / unvalidated">ⓘ</span></div>
           <div className="wcard-b">
-            {ppkQaSummary.state === "loading" && <div className="ppk-overview-copy">Memuat hasil QA tersimpan…</div>}
-            {ppkQaSummary.state === "error" && <div className="ppk-overview-copy">Hasil PPK QA belum dapat diakses. Data operasional tidak terpengaruh.</div>}
-            {ppkQaSummary.state === "ok" && ppkQaSummary.result?.total === 0 && <div className="ppk-overview-copy">Belum ada solusi eksperimental untuk rover ini.</div>}
+            {ppkQaSummary.state === "loading" && <div className="ppk-overview-copy">Loading stored QA results…</div>}
+            {ppkQaSummary.state === "error" && <div className="ppk-overview-copy">PPK QA results are unavailable. Operational data is unaffected.</div>}
+            {ppkQaSummary.state === "ok" && ppkQaSummary.result?.total === 0 && <div className="ppk-overview-copy">No experimental solutions are available for this rover.</div>}
             {ppkQaSummary.state === "ok" && ppkQaSummary.result?.total > 0 && (
               <>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginBottom:8}}>
                   {(["FIX","FLOAT","SINGLE"]).map((label) => <div key={label} style={{border:"1px solid var(--border, #dbe3eb)",borderRadius:6,padding:"7px 5px",textAlign:"center"}}><small>{label}</small><div style={{fontWeight:750,fontSize:18}}>{ppkQaSummary.result.counts[label]}</div></div>)}
                 </div>
-                <div className="ppk-overview-copy">{ppkQaSummary.result.total} solusi QA · PROVISIONAL_SPP · unvalidated{ppkQaSummary.result.limited ? " · terbatas 2000 baris" : ""}. Bukan displacement / alarm operasional.</div>
+                <div className="ppk-overview-copy">{ppkQaSummary.result.total} QA solutions · PROVISIONAL_SPP · unvalidated{ppkQaSummary.result.limited ? " · limited to 2,000 rows" : ""}. Not operational displacement or alarms.</div>
               </>
             )}
-            <button className="ppk-overview-link" onClick={() => nav("/ppk")}>Detail PPK QA →</button>
+            <button className="ppk-overview-link" onClick={() => nav("/ppk")}>PPK QA details →</button>
           </div>
         </div>
         <div className="wcard">
@@ -321,26 +321,26 @@ export default function Overview() {
               )}
             </div>
             <div className="wcard-legend">
-              <span><i style={{ background: "var(--bahaya)" }} />Teknis Bahaya {c.bahaya}</span>
-              <span><i style={{ background: "var(--siaga)" }} />Teknis Siaga {c.siaga}</span>
+              <span><i style={{ background: "var(--bahaya)" }} />Technical Danger {c.bahaya}</span>
+              <span><i style={{ background: "var(--siaga)" }} />Technical Warning {c.siaga}</span>
               <span><i style={{ background: "var(--ok)" }} />Normal {c.normal}</span>
-              <span><i style={{ background: "#8b8c96" }} />Belum terverifikasi {c.unknown || 0}</span>
+              <span><i style={{ background: "#8b8c96" }} />Not verified {c.unknown || 0}</span>
             </div>
           </div>
         </div>
 
         {/* External weather: latest persisted PostgreSQL observation per site. */}
         <div className="wcard">
-          <div className="wcard-h"><h3>External weather</h3><span className="wgic" title="Open-Meteo; bukan sensor lapangan">ⓘ</span></div>
+          <div className="wcard-h"><h3>External weather</h3><span className="wgic" title="Open-Meteo; not an on-site sensor">ⓘ</span></div>
           <div className="wcard-b wx-ext">
             {weatherSites.length === 0 && (
               <div className="wx-ext-site">
-                <div className="wx-ext-site-name">Observasi terakhir</div>
+                <div className="wx-ext-site-name">Latest observation</div>
                 <div className="wx-ext-row"><span>Rainfall</span><b>—</b></div>
                 <div className="wx-ext-row"><span>24h rainfall</span><b>—</b></div>
                 <div className="wx-ext-row"><span>Temperature</span><b>—</b></div>
                 <div className="wx-ext-row"><span>Humidity</span><b>—</b></div>
-                <div className="wx-ext-stale">{weatherError ? "Data cuaca gagal dimuat dari API." : weatherLoaded ? "Belum ada data cuaca tersimpan untuk site ini." : "Memuat data cuaca tersimpan…"}</div>
+                <div className="wx-ext-stale">{weatherError ? "Failed to load weather data from the API." : weatherLoaded ? "No stored weather observations for this site." : "Loading stored weather observations…"}</div>
               </div>
             )}
             {weatherSites.map((siteId) => {
@@ -350,7 +350,7 @@ export default function Overview() {
                   <div className="wx-ext-site-name">
                     {siteById[siteId]?.name || siteId}
                     {userPos && Number.isFinite(Number(siteById[siteId]?.lat)) && Number.isFinite(Number(siteById[siteId]?.lon)) && (
-                      <span className="wx-ext-dist"> · {haversineKm(userPos.lat, userPos.lon, siteById[siteId].lat, siteById[siteId].lon).toFixed(1)} km dari Anda</span>
+                      <span className="wx-ext-dist"> · {haversineKm(userPos.lat, userPos.lon, siteById[siteId].lat, siteById[siteId].lon).toFixed(1)} km from you</span>
                     )}
                   </div>
                   <div className="wx-ext-stale">{weatherAgeLabel(wx.observed_at)} · {weatherObservedAt(wx.observed_at)}{weatherError ? " · OFFLINE (last received)" : ""}</div>
@@ -361,9 +361,9 @@ export default function Overview() {
                 </div>
               );
             })}
-            <div className="wx-ext-attr">Open-Meteo · observasi terakhir dari database; API diperiksa setiap 60 detik. Data lama bukan kondisi live.</div>
+            <div className="wx-ext-attr">Open-Meteo · latest stored database observation; API checked every 60 seconds. Historical data does not represent live conditions.</div>
             {weatherSiteIds.length > weatherSites.length && (
-              <div className="wx-ext-more">+{weatherSiteIds.length - weatherSites.length} site lain punya data cuaca — lihat detail lereng.</div>
+              <div className="wx-ext-more">+{weatherSiteIds.length - weatherSites.length} other sites have weather observations — see slope details.</div>
             )}
           </div>
         </div>
