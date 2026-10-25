@@ -1,0 +1,38 @@
+# MAGRIS B15 — Biznet Weather Underground staging overlay
+# Usage:
+# docker compose -f docker-compose.yml \
+#   -f deploy/biznet/compose.weather.yml <command>
+#
+# Required deployment environment:
+# WU_API_KEY, WU_STATION_ID
+#
+# No credentials should be committed to Git.
+
+services:
+  api:
+    environment:
+      WU_STATION_ID: ${WU_STATION_ID:?WU_STATION_ID is required}
+
+  wu-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - python
+      - -m
+      - services.weather_service.wu_collector
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-slope_iot}
+      DB_USER: ${DB_USER:-slope}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      WU_API_KEY: ${WU_API_KEY:?WU_API_KEY is required}
+      WU_STATION_ID: ${WU_STATION_ID:?WU_STATION_ID is required}
+      WU_POLL_INTERVAL_SECONDS: "900"
+    security_opt:
+      - no-new-privileges:true

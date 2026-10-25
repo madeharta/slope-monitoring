@@ -7,8 +7,10 @@ export const WEATHER_METRICS = Object.freeze([
   { key: 'temperature_c', label: 'Temperature', unit: '°C', color: '#bd5c4c', digits: 1 },
   { key: 'humidity_pct', label: 'Humidity', unit: '%', color: '#4a9f91', digits: 0 },
   { key: 'wind_kmh', label: 'Wind Speed', unit: 'km/h', color: '#5680bb', digits: 1 },
+  { key: 'wind_gust_kmh', label: 'Wind Gust', unit: 'km/h', color: '#3c8eae', digits: 1 },
   { key: 'wind_direction_deg', label: 'Wind Direction', unit: '°', color: '#6982a8', digits: 0 },
   { key: 'rain_mm', label: 'Rainfall (interval)', unit: 'mm', color: '#5bafbf', digits: 1 },
+  { key: 'precip_rate_mmh', label: 'Rain Rate', unit: 'mm/h', color: '#439e88', digits: 1 },
   { key: 'pressure_hpa', label: 'Barometer', unit: 'hPa', color: '#b187c2', digits: 1 },
 ]);
 export function buildWeatherMockRows() {
