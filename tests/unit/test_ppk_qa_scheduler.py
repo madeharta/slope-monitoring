@@ -108,3 +108,47 @@ def test_b19_runs_both_rovers_without_apply(monkeypatch, tmp_path, capsys):
     assert len(calls) == 2
     assert [call[call.index('--rover')+1] for call in calls] == list(module.DEFAULT_ROVERS)
     assert capsys.readouterr().out.count('"result": "WAITING_INPUT"') == 2
+
+
+def test_nav_download_streaming_success(monkeypatch):
+    import types
+    class Stream:
+        headers = {'Content-Type': 'application/gzip'}
+        def __init__(self): self.blocks = [b'abc', b'def', b'']
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self, size): return self.blocks.pop(0)
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *a, **kw: Stream())
+    assert module.download_nav('https://igs.bkg.bund.de/example.gz') == b'abcdef'
+
+
+def test_nav_download_rejects_html(monkeypatch):
+    class Stream:
+        headers = {'Content-Type': 'text/html; charset=utf-8'}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *a, **kw: Stream())
+    with pytest.raises(ValueError, match='HTML'):
+        module.download_nav('https://igs.bkg.bund.de/example.gz')
+
+
+def test_nav_download_rejects_oversized_stream(monkeypatch):
+    monkeypatch.setattr(module, 'MAX_NAV_GZIP_BYTES', 5)
+    class Stream:
+        headers = {'Content-Type': 'application/gzip'}
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self, size): return b'0123456789'
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *a, **kw: Stream())
+    with pytest.raises(ValueError, match='maximum size'):
+        module.download_nav('https://igs.bkg.bund.de/example.gz')
+
+
+def test_nav_deadline_becomes_waiting_and_cache_stays_empty(monkeypatch, tmp_path):
+    def timeout(_url):
+        raise module.NavDeadlineExceeded('test deadline')
+    monkeypatch.setattr(module, 'download_nav', timeout)
+    start = dt.datetime(2026, 10, 8, 15, tzinfo=dt.timezone.utc)
+    with pytest.raises(RuntimeError, match='WAITING_NAV download_deadline_exceeded'):
+        module.nav_for(start, start + dt.timedelta(hours=1), tmp_path, True)
+    assert list(tmp_path.iterdir()) == []

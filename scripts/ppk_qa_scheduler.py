@@ -10,6 +10,9 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
+import threading
+import time
 import subprocess
 import sys
 import tempfile
@@ -67,6 +70,9 @@ def selected_rovers(rover_args):
 
 MAX_NAV_GZIP_BYTES = 30 * 1024 * 1024
 MAX_NAV_EXPANDED_BYTES = 80 * 1024 * 1024
+NAV_WALL_TIMEOUT_SECONDS = 75
+NAV_SOCKET_TIMEOUT_SECONDS = 15
+NAV_CHUNK_BYTES = 64 * 1024
 
 
 def bounded_nav_decompress(compressed: bytes) -> bytes:
@@ -89,6 +95,55 @@ def bounded_nav_decompress(compressed: bytes) -> bytes:
     return bytes(out)
 
 
+
+class NavDeadlineExceeded(TimeoutError):
+    """Overall IGS download deadline, independent of per-socket timeout."""
+
+
+def download_nav(url: str) -> bytes:
+    """Bound total download time AND size. Never retain unvalidated partial data.
+
+    The QA scheduler executes on Linux in the main Python thread. SIGALRM is
+    deliberately not installed from other threads (fail closed instead).
+    """
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError('NAV downloader requires main thread')
+    if not hasattr(signal, 'setitimer'):
+        raise RuntimeError('NAV deadline unsupported on this platform')
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    if previous_timer[0] > 0:
+        raise RuntimeError('NAV deadline conflict with existing timer')
+    old_handler = signal.getsignal(signal.SIGALRM)
+    started = time.monotonic()
+    total = 0
+
+    def on_timeout(_signum, _frame):
+        raise NavDeadlineExceeded('NAV download exceeded wall-clock deadline')
+
+    signal.signal(signal.SIGALRM, on_timeout)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, NAV_WALL_TIMEOUT_SECONDS)
+        request = urllib.request.Request(url, headers={'User-Agent': 'MAGRIS-QA-NAV/1'})
+        with urllib.request.urlopen(request, timeout=NAV_SOCKET_TIMEOUT_SECONDS) as response:
+            # Redirects to HTML/login pages must not be interpreted as NAV.
+            if response.headers.get('Content-Type', '').lower().startswith('text/html'):
+                raise ValueError('NAV source returned HTML')
+            chunks = []
+            while True:
+                chunk = response.read(min(NAV_CHUNK_BYTES, MAX_NAV_GZIP_BYTES + 1 - total))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_NAV_GZIP_BYTES:
+                    raise ValueError('NAV exceeds maximum size')
+                chunks.append(chunk)
+        print('NAV_DOWNLOAD_OK', total, round(time.monotonic() - started, 2), flush=True)
+        return b''.join(chunks)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
+
+
 def nav_for(start, end, cache: Path, download: bool):
     day = start.date()
     doy = day.timetuple().tm_yday
@@ -100,12 +155,13 @@ def nav_for(start, end, cache: Path, download: bool):
             raise FileNotFoundError('WAITING_NAV cache missing')
         url = f'https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{day.year}/{doy:03d}/{name}'
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'MAGRIS-QA-NAV/1'}), timeout=35) as response:
-                data = response.read(MAX_NAV_GZIP_BYTES + 1)
+            data = download_nav(url)
         except urllib.error.HTTPError as exc:
             if exc.code in (404, 429, 500, 502, 503, 504):
                 raise RuntimeError(f'WAITING_NAV HTTP_{exc.code}') from exc
             raise RuntimeError(f'NAV_HTTP_ERROR_{exc.code}') from exc
+        except NavDeadlineExceeded as exc:
+            raise RuntimeError('WAITING_NAV download_deadline_exceeded') from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise RuntimeError('WAITING_NAV network_unavailable') from exc
         if len(data) > MAX_NAV_GZIP_BYTES:
