@@ -80,7 +80,8 @@ def test_b19_nav_404_becomes_waiting(monkeypatch, tmp_path):
     start = dt.datetime(2026, 10, 28, 7, tzinfo=dt.timezone.utc)
     with pytest.raises(RuntimeError, match='WAITING_NAV HTTP_404'):
         module.nav_for(start, start + dt.timedelta(hours=1), tmp_path, True)
-    assert list(tmp_path.iterdir()) == []
+    assert not list(tmp_path.glob('*.part'))
+    assert not list(tmp_path.glob('*.part.json'))
 
 
 def test_b19_runs_both_rovers_without_apply(monkeypatch, tmp_path, capsys):
@@ -147,8 +148,71 @@ def test_nav_download_rejects_oversized_stream(monkeypatch):
 def test_nav_deadline_becomes_waiting_and_cache_stays_empty(monkeypatch, tmp_path):
     def timeout(_url):
         raise module.NavDeadlineExceeded('test deadline')
-    monkeypatch.setattr(module, 'download_nav', timeout)
+    monkeypatch.setattr(module, 'download_nav_resumable', lambda *_: timeout(None))
     start = dt.datetime(2026, 10, 8, 15, tzinfo=dt.timezone.utc)
     with pytest.raises(RuntimeError, match='WAITING_NAV download_deadline_exceeded'):
         module.nav_for(start, start + dt.timedelta(hours=1), tmp_path, True)
-    assert list(tmp_path.iterdir()) == []
+    assert not list(tmp_path.glob('*.part'))
+    assert not list(tmp_path.glob('*.part.json'))
+
+
+def test_nav_resume_range_after_partial_timeout(monkeypatch, tmp_path):
+    import urllib.error
+    data = gzip.compress(b'hello NAV data' * 300)
+    url, name = 'https://example.test/BRDC.gz', 'BRDC.gz'
+    seen = []
+
+    class Response:
+        def __init__(self, status, headers, payload, fail=False):
+            self.status, self.headers, self.payload, self.fail = status, headers, payload, fail
+            self.pos = 0
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def read(self, n):
+            if self.fail and self.pos >= 18:
+                raise urllib.error.URLError('connection interrupted')
+            out = self.payload[self.pos:self.pos + min(n, 18)]
+            self.pos += len(out)
+            return out
+
+    def urlopen(request, timeout=None):
+        seen.append(dict(request.header_items()))
+        if len(seen) == 1:
+            return Response(200, {'Content-Type': 'application/gzip',
+                                  'Content-Length': str(len(data)),
+                                  'ETag': '"v1"'}, data, fail=True)
+        offset = int(request.get_header('Range').split('=')[1].split('-')[0])
+        return Response(206, {'Content-Type': 'application/gzip',
+                              'Content-Range': f'bytes {offset}-{len(data)-1}/{len(data)}',
+                              'ETag': '"v1"'}, data[offset:])
+
+    monkeypatch.setattr(module.urllib.request, 'urlopen', urlopen)
+    with pytest.raises(urllib.error.URLError):
+        module.download_nav_resumable(url, tmp_path, name)
+    partial = tmp_path / (name + '.part')
+    assert partial.stat().st_size == 18
+    assert module.download_nav_resumable(url, tmp_path, name) == data
+    assert seen[1]['Range'] == 'bytes=18-'
+    assert seen[1]['If-range'] == '"v1"'
+
+
+def test_nav_resume_restarts_on_http_200(monkeypatch, tmp_path):
+    data = gzip.compress(b'different NAV file')
+    url, name = 'https://example.test/BRDC.gz', 'BRDC.gz'
+    (tmp_path / (name + '.part')).write_bytes(b'old')
+    (tmp_path / (name + '.part.json')).write_text(
+        __import__('json').dumps({'url': url, 'validator': '"old"', 'total': 100}))
+
+    class Response:
+        status = 200
+        headers = {'Content-Type': 'application/gzip', 'Content-Length': str(len(data)), 'ETag': '"new"'}
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def __init__(self): self.payload = data
+        def read(self, size):
+            value, self.payload = self.payload[:size], self.payload[size:]
+            return value
+
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *a, **kw: Response())
+    assert module.download_nav_resumable(url, tmp_path, name) == data
+    assert (tmp_path / (name + '.part')).read_bytes() == data

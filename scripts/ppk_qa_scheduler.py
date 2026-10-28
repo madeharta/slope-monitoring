@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import gzip
 import io
+import fcntl
 import hashlib
 import json
 import os
@@ -144,6 +145,145 @@ def download_nav(url: str) -> bytes:
         signal.signal(signal.SIGALRM, old_handler)
 
 
+
+def download_nav_resumable(url: str, cache: Path, name: str) -> bytes:
+    """Bounded, persistent HTTP Range transfer. Only callers validate/promote NAV.
+
+    Resume requires a stable ETag or Last-Modified validator. The partial file
+    and metadata are staging artifacts, never valid NAV cache entries.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError('NAV downloader requires main thread')
+    if not hasattr(signal, 'setitimer'):
+        raise RuntimeError('NAV deadline unsupported on this platform')
+    cache = Path(cache)
+    part = cache / (name + '.part')
+    metadata_path = cache / (name + '.part.json')
+    lock_path = cache / (name + '.part.lock')
+
+    def discard():
+        part.unlink(missing_ok=True)
+        metadata_path.unlink(missing_ok=True)
+
+    # Serialize concurrent scheduler attempts for the same date.
+    with lock_path.open('a+b') as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        offset, metadata = 0, None
+        if part.exists() and metadata_path.exists():
+            try:
+                metadata = json.loads(metadata_path.read_text())
+                offset = part.stat().st_size
+                if (not isinstance(metadata, dict) or metadata.get('url') != url
+                        or not isinstance(metadata.get('validator'), str)
+                        or not metadata['validator']
+                        or not isinstance(metadata.get('total'), int)
+                        or not 0 < metadata['total'] <= MAX_NAV_GZIP_BYTES
+                        or not 0 < offset <= metadata['total']):
+                    raise ValueError('invalid partial metadata')
+            except (ValueError, OSError, json.JSONDecodeError):
+                discard()
+                metadata, offset = None, 0
+        else:
+            discard()
+
+        if offset and offset == metadata['total']:
+            return part.read_bytes()
+
+        if signal.getitimer(signal.ITIMER_REAL)[0] > 0:
+            raise RuntimeError('NAV deadline conflict with existing timer')
+        old_handler = signal.getsignal(signal.SIGALRM)
+        started = time.monotonic()
+
+        def on_timeout(_signum, _frame):
+            raise NavDeadlineExceeded('NAV download exceeded wall-clock deadline')
+
+        headers = {'User-Agent': 'MAGRIS-QA-NAV/1'}
+        if offset:
+            headers['Range'] = f'bytes={offset}-'
+            headers['If-Range'] = metadata['validator']
+
+        signal.signal(signal.SIGALRM, on_timeout)
+        try:
+            signal.setitimer(signal.ITIMER_REAL, NAV_WALL_TIMEOUT_SECONDS)
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=NAV_SOCKET_TIMEOUT_SECONDS) as response:
+                if response.headers.get('Content-Type', '').lower().startswith('text/html'):
+                    discard()
+                    raise ValueError('NAV source returned HTML')
+                status = response.status if hasattr(response, 'status') else response.getcode()
+                if status not in (200, 206):
+                    raise ValueError(f'unexpected NAV HTTP status {status}')
+                etag = response.headers.get('ETag')
+                last_modified = response.headers.get('Last-Modified')
+                validator = etag or last_modified
+                # Weak ETags cannot ensure byte-for-byte stable resume.
+                if etag and etag.strip().startswith('W/'):
+                    validator = last_modified
+                if status == 206:
+                    m = re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)', response.headers.get('Content-Range', ''))
+                    if not m:
+                        discard()
+                        raise ValueError('NAV missing or invalid Content-Range')
+                    first, last, total = map(int, m.groups())
+                    if (first != offset or last < first or total <= last
+                            or total > MAX_NAV_GZIP_BYTES or not offset
+                            or metadata is None or metadata['total'] != total
+                            or metadata['validator'] != validator):
+                        discard()
+                        raise ValueError('NAV resume response mismatch')
+                    remaining = last - first + 1
+                    mode = 'ab'
+                else:
+                    # HTTP 200 after Range means server ignored resume or file changed.
+                    discard()
+                    offset = 0
+                    length = response.headers.get('Content-Length')
+                    try:
+                        total = int(length) if length is not None else None
+                    except ValueError:
+                        raise ValueError('invalid NAV Content-Length')
+                    if total is not None and not 0 < total <= MAX_NAV_GZIP_BYTES:
+                        raise ValueError('NAV compressed size too large')
+                    remaining = total
+                    mode = 'wb'
+                    if total is not None and validator:
+                        # Metadata written atomically before transfer; the part itself
+                        # is never accepted without a validated final gzip.
+                        with tempfile.NamedTemporaryFile('w', dir=cache, delete=False) as f:
+                            json.dump({'url': url, 'validator': validator, 'total': total}, f)
+                            temp_meta = Path(f.name)
+                        temp_meta.replace(metadata_path)
+                with part.open(mode) as out:
+                    transferred = 0
+                    while True:
+                        cap = MAX_NAV_GZIP_BYTES + 1 - offset - transferred
+                        if cap <= 0:
+                            raise ValueError('NAV exceeds maximum size')
+                        if remaining is not None and transferred == remaining:
+                            # Ensure EOF rather than accept an additional chunk.
+                            if response.read(1):
+                                raise ValueError('NAV response exceeds Content-Length')
+                            break
+                        size = min(NAV_CHUNK_BYTES, cap)
+                        if remaining is not None:
+                            size = min(size, remaining - transferred)
+                        chunk = response.read1(size) if hasattr(response, 'read1') else response.read(size)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        out.flush()
+                        transferred += len(chunk)
+                        if offset + transferred > MAX_NAV_GZIP_BYTES:
+                            raise ValueError('NAV exceeds maximum size')
+                if remaining is not None and transferred != remaining:
+                    raise urllib.error.URLError('NAV truncated transfer')
+                print('NAV_TRANSFER', offset + transferred, round(time.monotonic() - started, 2), flush=True)
+                return part.read_bytes()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old_handler)
+
+
 def nav_for(start, end, cache: Path, download: bool):
     day = start.date()
     doy = day.timetuple().tm_yday
@@ -155,7 +295,7 @@ def nav_for(start, end, cache: Path, download: bool):
             raise FileNotFoundError('WAITING_NAV cache missing')
         url = f'https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{day.year}/{doy:03d}/{name}'
         try:
-            data = download_nav(url)
+            data = download_nav_resumable(url, cache, name)
         except urllib.error.HTTPError as exc:
             if exc.code in (404, 429, 500, 502, 503, 504):
                 raise RuntimeError(f'WAITING_NAV HTTP_{exc.code}') from exc
@@ -166,12 +306,19 @@ def nav_for(start, end, cache: Path, download: bool):
             raise RuntimeError('WAITING_NAV network_unavailable') from exc
         if len(data) > MAX_NAV_GZIP_BYTES:
             raise ValueError('NAV exceeds maximum size')
-        plain = bounded_nav_decompress(data)
-        validate_nav(plain, start, end)
+        try:
+            plain = bounded_nav_decompress(data)
+            validate_nav(plain, start, end)
+        except (ValueError, OSError):
+            (cache / (name + '.part')).unlink(missing_ok=True)
+            (cache / (name + '.part.json')).unlink(missing_ok=True)
+            raise
         with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
             tmp.write(data)
             candidate = Path(tmp.name)
         candidate.replace(gz_path)
+        (cache / (name + '.part')).unlink(missing_ok=True)
+        (cache / (name + '.part.json')).unlink(missing_ok=True)
     if gz_path.stat().st_size > MAX_NAV_GZIP_BYTES:
         raise ValueError('NAV cached compressed size too large')
     plain = bounded_nav_decompress(gz_path.read_bytes())
