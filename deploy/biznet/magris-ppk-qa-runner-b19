@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+import datetime as dt
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+import re
+from urllib.parse import quote
+
+ROOT = pathlib.Path(os.environ.get("MAGRIS_PPK_QA_RELEASE", "/opt/landslidemon/releases/b13-e4320a8"))
+CACHE = pathlib.Path("/var/cache/magris-ppk-qa")
+SECRETS = pathlib.Path("/etc/landslidemon/secrets")
+IMAGE = os.environ.get("MAGRIS_PPK_QA_IMAGE", "landslidemon-api:91ad329")
+NETWORK = "landslidemon_db_internal"
+
+def docker(args, timeout):
+    result = subprocess.run(
+        ["docker", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+    if result.returncode:
+        # Avoid printing arbitrary stderr containing connection details.
+        print("CONTAINER_FAILED: exit", result.returncode, flush=True)
+        raise RuntimeError("container execution failed")
+
+    return result.stdout
+
+def mounts():
+    return [
+        "--mount", f"type=bind,src={ROOT},dst=/workspace,readonly",
+        "--mount", f"type=bind,src={CACHE},dst=/nav",
+        "--workdir", "/workspace",
+        "--env", "PYTHONPATH=/workspace",
+        "--entrypoint", "python",
+    ]
+
+# Backlog cursor cycles through historical 7-day slices. Never scans more than
+# 30 days in one DB request, and never blocks future retries of WAITING_NAV.
+STATE = CACHE / "b19_backlog_state.json"
+START = dt.datetime(2026, 10, 8, 0, tzinfo=dt.timezone.utc)
+ROVERS = {"ROVER-B1-01", "ROVER-B1-02"}
+MAX_JOBS = 3
+
+
+def utc_hour(value):
+    parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() != dt.timedelta(0):
+        raise ValueError("UTC timestamp required")
+    if parsed.minute or parsed.second or parsed.microsecond:
+        raise ValueError("whole UTC hour required")
+    return parsed
+
+
+def read_state():
+    if not STATE.exists():
+        return {"cursor": START.isoformat(), "cooldowns": {}}
+    if STATE.stat().st_size > 128 * 1024:
+        raise ValueError("state too large")
+    data = json.loads(STATE.read_text())
+    if not isinstance(data, dict) or not isinstance(data.get("cooldowns"), dict):
+        raise ValueError("invalid backlog state")
+    utc_hour(data["cursor"])
+    return data
+
+
+def write_state(data):
+    CACHE.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=".b19-state-", dir=CACHE)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(data, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(name, 0o600)
+        os.replace(name, STATE)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def discovery_bounds(state, now):
+    cutoff = (now - dt.timedelta(minutes=20)).replace(minute=0, second=0, microsecond=0)
+    cursor = utc_hour(state["cursor"])
+    if cursor < START or cursor >= cutoff:
+        cursor = START
+    finish = min(cursor + dt.timedelta(days=7), cutoff)
+    if finish <= cursor:
+        return None
+    return cursor, finish
+
+
+def load_jobs(output):
+    data = json.loads(output.strip())
+    jobs = data.get("selected")
+    if not isinstance(jobs, list) or len(jobs) > MAX_JOBS:
+        raise ValueError("invalid discovery result")
+    seen = set()
+    for job in jobs:
+        if not isinstance(job, dict) or job.get("rover") not in ROVERS:
+            raise ValueError("invalid rover")
+        start, end = utc_hour(job["since"]), utc_hour(job["until"])
+        if end - start != dt.timedelta(hours=1):
+            raise ValueError("invalid job duration")
+        key = (job["rover"], start)
+        if key in seen:
+            raise ValueError("duplicate discovery job")
+        seen.add(key)
+    return jobs
+
+
+def prepare_nav(job):
+    # NAV downloads occur only for selected historical windows; no manual files.
+    code = """
+import datetime as dt
+import sys
+from pathlib import Path
+from scripts.ppk_qa_scheduler import nav_for
+start = dt.datetime.fromisoformat(sys.argv[1])
+end = start + dt.timedelta(hours=1)
+try:
+    path, count, digest = nav_for(start, end, Path('/nav'), True)
+    print('NAV_READY', count, digest[:16])
+except (RuntimeError, ValueError, FileNotFoundError) as exc:
+    if 'WAITING_NAV' not in str(exc):
+        raise
+    print('NAV_WAITING')
+"""
+    return docker(["run", "--rm", "--network", "bridge", *mounts(),
+                   IMAGE, "-c", code, job["since"]], timeout=180).strip()
+
+
+def record_cooldown(state, job, result, now):
+    key = job["rover"] + "|" + job["since"]
+    if result in ("WAITING_NAV", "WAITING_INPUT"):
+        state["cooldowns"][key] = (now + dt.timedelta(hours=6)).isoformat()
+    else:
+        state["cooldowns"].pop(key, None)
+    # Bound state size, removing elapsed entries.
+    state["cooldowns"] = {
+        key: val for key, val in state["cooldowns"].items()
+        if dt.datetime.fromisoformat(val) > now
+    }
+
+def run_scheduler(job, discovery=False, bounds=None, state=None):
+    with tempfile.TemporaryDirectory(
+        prefix="magris-qa-", dir="/run"
+    ) as tmp:
+        envfile = pathlib.Path(tmp) / "worker.env"
+
+        settings = {
+            "PPK_QA_PROJECT_ROOT": "/workspace",
+            "PPK_QA_FORWARD_CONFIG":
+                "/workspace/config/rtklib_ppk_forward_qa.conf",
+            "PPK_QA_NAV_CACHE": "/nav",
+            "PPK_QA_SOURCE_DB_NAME": "slope_iot",
+            "PPK_QA_WRITER_DB_NAME": "ppk_qa_biznet",
+            "PPK_QA_SOURCE_DB_ROLE": "ppk_qa_source_reader",
+            "PPK_QA_WRITER_DB_ROLE": "ppk_qa_writer",
+            "PPK_QA_AUTO_ENABLED": "true",
+            "PPK_QA_STAGING_ONLY": "true",
+            "OPERATIONAL_ALARMS_ENABLED": "false",
+        }
+
+        for prefix, role, database in (
+            ("SOURCE", "ppk_qa_source_reader", "slope_iot"),
+            ("WRITER", "ppk_qa_writer", "ppk_qa_biznet"),
+        ):
+            password = (
+                SECRETS / f"{role}_password"
+            ).read_text().strip()
+
+            if len(password) < 40:
+                raise RuntimeError("invalid credential")
+
+            settings[f"PPK_QA_{prefix}_DATABASE_URL"] = (
+                f"postgresql://{role}:{quote(password, safe='')}"
+                f"@landslidemon-db:5432/{database}"
+            )
+
+        fd = os.open(
+            envfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+        with os.fdopen(fd, "w") as handle:
+            for key, value in settings.items():
+                handle.write(f"{key}={value}\n")
+
+        if discovery:
+            # Restrict state exposure to an isolated read-only bind mount.
+            cooldown_file = pathlib.Path(tmp) / "cooldowns.json"
+            cooldown_file.write_text(json.dumps(state["cooldowns"]))
+            os.chmod(cooldown_file, 0o600)
+            cmd = ["docker", "run", "--rm", "--network", NETWORK,
+                   "--env-file", str(envfile),
+                   "--mount", f"type=bind,src={cooldown_file},dst=/run/cooldowns.json,readonly",
+                   *mounts(), IMAGE, "scripts/ppk_qa_backlog.py",
+                   "--since", bounds[0].isoformat(), "--until", bounds[1].isoformat(),
+                   "--limit", str(MAX_JOBS), "--cooldowns", "/run/cooldowns.json"]
+            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            if completed.returncode:
+                raise RuntimeError("backlog discovery failed")
+            return load_jobs(completed.stdout)
+
+        args = ["--rover", job["rover"], "--since", job["since"],
+                "--until", job["until"]]
+        command = ["docker", "run", "--rm", "--network", NETWORK,
+                   "--env-file", str(envfile), *mounts(), IMAGE,
+                   "scripts/ppk_qa_scheduler.py", "--apply", "--no-download",
+                   *args, "--timeout-seconds", "600"]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=660)
+        records = []
+        for line in result.stdout.splitlines():
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(value, dict) and "window" in value:
+                records.append(value)
+        if len(records) != 1 or records[0].get("rover") != job["rover"]:
+            raise RuntimeError("unexpected scheduler coverage")
+        record = records[0]
+        outcome = record.get("result")
+        if outcome not in {"WAITING_NAV", "WAITING_INPUT", "PROCESSED_OR_IDEMPOTENT"}:
+            raise RuntimeError("scheduler returned unexpected result")
+        if result.returncode not in (0, 1):
+            raise RuntimeError("scheduler container failed")
+        if result.returncode == 1 and outcome != "WAITING_NAV":
+            raise RuntimeError("unexpected scheduler failure")
+        print("QA_WINDOW:", json.dumps({k:record[k] for k in (
+              "window", "until", "rover", "result", "nav_reason", "statuses")
+              if k in record}), flush=True)
+        return outcome
+
+def main():
+    if not ROOT.is_dir() or not CACHE.is_dir():
+        raise RuntimeError("release or NAV cache missing")
+    now = dt.datetime.now(dt.timezone.utc)
+    state = read_state()
+    bounds = discovery_bounds(state, now)
+    if bounds is None:
+        print("SCHEDULER_ONESHOT: NO_CLOSED_WINDOW", flush=True)
+        return
+    jobs = run_scheduler(None, discovery=True, bounds=bounds, state=state)
+    summary = {"selected": len(jobs), "waiting_nav": 0,
+               "waiting_input": 0, "processed_or_idempotent": 0}
+    for job in jobs:
+        nav = prepare_nav(job)
+        if nav.startswith("NAV_WAITING"):
+            outcome = "WAITING_NAV"
+            print("QA_WINDOW:", json.dumps({**job, "result": outcome}), flush=True)
+        elif nav.startswith("NAV_READY"):
+            outcome = run_scheduler(job)
+        else:
+            raise RuntimeError("unexpected NAV status")
+        summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
+                 "PROCESSED_OR_IDEMPOTENT": "processed_or_idempotent"}[outcome]] += 1
+        record_cooldown(state, job, outcome, now)
+        write_state(state)  # preserve progress even if later work fails
+    state["cursor"] = (START if bounds[1] >= (now - dt.timedelta(minutes=20)).replace(
+        minute=0, second=0, microsecond=0) else bounds[1]).isoformat()
+    write_state(state)
+    print("SCHEDULER_SUMMARY:", json.dumps(summary), flush=True)
+    print("SCHEDULER_ONESHOT: PASS", flush=True)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        print("SCHEDULER_ONESHOT: FAILED", type(exc).__name__, flush=True)
+        sys.exit(1)

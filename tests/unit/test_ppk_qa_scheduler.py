@@ -49,3 +49,62 @@ def test_bounded_nav_decompress_rejects_expansion_bomb(monkeypatch):
 def test_bounded_nav_decompress_rejects_truncated_gzip():
     with pytest.raises(ValueError, match='corrupt or truncated'):
         module.bounded_nav_decompress(gzip.compress(b'nav-data')[:-5])
+
+
+def test_b19_rover_selection_and_rejection():
+    assert module.selected_rovers(None) == ['ROVER-B1-01', 'ROVER-B1-02']
+    assert module.selected_rovers(['ROVER-B1-02', 'ROVER-B1-02']) == ['ROVER-B1-02']
+    with pytest.raises(ValueError):
+        module.selected_rovers(['OTHER'])
+
+
+def test_b19_backlog_bounded_and_closed():
+    now = dt.datetime(2026, 10, 28, 12, 30, tzinfo=dt.timezone.utc)
+    selected = module.planned_windows(now, 20, 3, '2026-10-26T12:00:00+00:00', '2026-10-27T12:00:00+00:00')
+    assert len(selected) == 24
+    assert selected[0][0].isoformat() == '2026-10-26T12:00:00+00:00'
+    assert selected[-1][1].isoformat() == '2026-10-27T12:00:00+00:00'
+    with pytest.raises(ValueError, match='bounded'):
+        module.planned_windows(now, 20, 3, '2026-10-25T00:00:00+00:00', '2026-10-27T00:00:00+00:00')
+    with pytest.raises(ValueError, match='unclosed'):
+        module.planned_windows(now, 20, 3, '2026-10-28T12:00:00+00:00', '2026-10-28T13:00:00+00:00')
+    with pytest.raises(ValueError, match='timezone'):
+        module.planned_windows(now, 20, 3, '2026-10-26T12:00:00', '2026-10-27T12:00:00')
+
+
+def test_b19_nav_404_becomes_waiting(monkeypatch, tmp_path):
+    import urllib.error
+    def missing(*a, **kw):
+        raise urllib.error.HTTPError('https://example.invalid', 404, 'missing', {}, None)
+    monkeypatch.setattr(module.urllib.request, 'urlopen', missing)
+    start = dt.datetime(2026, 10, 28, 7, tzinfo=dt.timezone.utc)
+    with pytest.raises(RuntimeError, match='WAITING_NAV HTTP_404'):
+        module.nav_for(start, start + dt.timedelta(hours=1), tmp_path, True)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_b19_runs_both_rovers_without_apply(monkeypatch, tmp_path, capsys):
+    import argparse
+    config = tmp_path / 'config.conf'
+    config.write_text('QA fixture')
+    monkeypatch.setenv('PPK_QA_FORWARD_CONFIG', str(config))
+    for key in ('PPK_QA_SOURCE_DATABASE_URL','PPK_QA_WRITER_DATABASE_URL',
+                'PPK_QA_SOURCE_DB_NAME','PPK_QA_WRITER_DB_NAME',
+                'PPK_QA_SOURCE_DB_ROLE','PPK_QA_WRITER_DB_ROLE'):
+        monkeypatch.setenv(key, 'fixture')
+    monkeypatch.setattr(module, 'planned_windows', lambda *a, **kw: [
+        (dt.datetime(2026,10,26,12,tzinfo=dt.timezone.utc),
+         dt.datetime(2026,10,26,13,tzinfo=dt.timezone.utc))])
+    monkeypatch.setattr(module, 'nav_for', lambda *a: (tmp_path/'nav', 4, 'd'*64))
+    calls = []
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return argparse.Namespace(returncode=0, stdout='{"status":"WAITING_PAIR"}', stderr='')
+    monkeypatch.setattr(module.subprocess, 'run', fake_run)
+    args = argparse.Namespace(apply=False, grace_minutes=20, backfill_hours=3, since=None,
+        until=None, rover=None, site='ITB-STAGING-01', base='BASE-01', min_matched=4,
+        no_download=False, timeout_seconds=600)
+    assert module.run(args) == 0
+    assert len(calls) == 2
+    assert [call[call.index('--rover')+1] for call in calls] == list(module.DEFAULT_ROVERS)
+    assert capsys.readouterr().out.count('"result": "WAITING_INPUT"') == 2

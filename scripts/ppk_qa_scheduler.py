@@ -17,6 +17,8 @@ import urllib.error
 import urllib.request
 
 UTC = dt.timezone.utc
+MAX_BATCH_WINDOWS = 24
+DEFAULT_ROVERS = ("ROVER-B1-01", "ROVER-B1-02")
 REF = (-6.867113383, 107.578782477, 880.5476)  # provisional SPP, not surveyed
 
 
@@ -25,6 +27,41 @@ def windows(now: dt.datetime, grace_minutes: int, backfill_hours: int):
         raise ValueError('invalid timezone/grace/backfill')
     end = (now.astimezone(UTC) - dt.timedelta(minutes=grace_minutes)).replace(minute=0, second=0, microsecond=0)
     return [(end - dt.timedelta(hours=i+1), end - dt.timedelta(hours=i)) for i in reversed(range(backfill_hours))]
+
+
+def planned_windows(now, grace_minutes, backfill_hours, since=None, until=None, max_windows=MAX_BATCH_WINDOWS):
+    """Select closed hourly windows; explicit backlog is bounded and chronological."""
+    recent = windows(now, grace_minutes, backfill_hours)
+    if since is None and until is None:
+        return recent
+    if since is None or until is None:
+        raise ValueError('backlog requires both --since and --until')
+    try:
+        beginning = dt.datetime.fromisoformat(since.replace('Z', '+00:00'))
+        finish = dt.datetime.fromisoformat(until.replace('Z', '+00:00'))
+    except ValueError as exc:
+        raise ValueError('invalid backlog timestamp') from exc
+    if beginning.tzinfo is None or finish.tzinfo is None:
+        raise ValueError('backlog timestamps must be timezone-aware')
+    beginning, finish = beginning.astimezone(UTC), finish.astimezone(UTC)
+    if (beginning.minute, beginning.second, beginning.microsecond) != (0, 0, 0) or \
+       (finish.minute, finish.second, finish.microsecond) != (0, 0, 0):
+        raise ValueError('backlog bounds must align to whole UTC hours')
+    cutoff = recent[-1][1]
+    count = int((finish - beginning).total_seconds() / 3600)
+    if not 1 <= count <= max_windows or beginning + dt.timedelta(hours=count) != finish:
+        raise ValueError('backlog length outside bounded hourly range')
+    if finish > cutoff:
+        raise ValueError('backlog includes an unclosed window')
+    return [(beginning + dt.timedelta(hours=i), beginning + dt.timedelta(hours=i+1))
+            for i in range(count)]
+
+
+def selected_rovers(rover_args):
+    rovers = list(dict.fromkeys(rover_args or DEFAULT_ROVERS))
+    if not rovers or len(rovers) > 2 or any(r not in DEFAULT_ROVERS for r in rovers):
+        raise ValueError('invalid QA rover selection')
+    return rovers
 
 
 
@@ -65,8 +102,12 @@ def nav_for(start, end, cache: Path, download: bool):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'MAGRIS-QA-NAV/1'}), timeout=35) as response:
                 data = response.read(MAX_NAV_GZIP_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (404, 429, 500, 502, 503, 504):
+                raise RuntimeError(f'WAITING_NAV HTTP_{exc.code}') from exc
+            raise RuntimeError(f'NAV_HTTP_ERROR_{exc.code}') from exc
         except (urllib.error.URLError, TimeoutError) as exc:
-            raise RuntimeError('WAITING_NAV unavailable') from exc
+            raise RuntimeError('WAITING_NAV network_unavailable') from exc
         if len(data) > MAX_NAV_GZIP_BYTES:
             raise ValueError('NAV exceeds maximum size')
         plain = bounded_nav_decompress(data)
@@ -143,30 +184,36 @@ def run(args):
     env['PYTHONPATH'] = str(root) + os.pathsep + env.get('PYTHONPATH', '')
     env['PPK_QA_AUTOMATION_ENABLED'] = 'true' if args.apply else 'false'
     failures = []
-    for start, end in windows(dt.datetime.now(UTC), args.grace_minutes, args.backfill_hours):
-        record = {'window':start.isoformat(), 'until':end.isoformat(), 'mode':'APPLY_QA' if args.apply else 'DRY_RUN'}
-        try:
-            nav, count, digest = nav_for(start, end, nav_cache, not args.no_download)
-            record.update(nav_gps_near=count, nav_sha256=digest, nav_validation='PRELIMINARY')
-            cmd = [sys.executable, str(root/'scripts/ppk_qa_worker.py'), '--site',args.site,'--base',args.base,
-                   '--rover',args.rover,'--base-lat',str(REF[0]),'--base-lon',str(REF[1]),'--base-alt',str(REF[2]),
-                   '--nav',str(nav),'--config',str(config),'--since',start.isoformat(),'--until',end.isoformat(),
-                   '--window-minutes','60','--min-matched',str(args.min_matched)]
-            if args.apply:
-                cmd.append('--apply')
-            result = subprocess.run(cmd, env=env, cwd=root, capture_output=True, text=True, timeout=args.timeout_seconds)
-            record['worker_exit_code'] = result.returncode
-            # Do not echo arbitrary database/error strings; record only recognized status tokens.
-            statuses = re.findall(r'"status"\s*:\s*"([A-Z_]+)"', result.stdout)
-            record['statuses'] = statuses
-            if result.returncode or any(s == 'FAILED' for s in statuses):
-                raise RuntimeError('worker failed; inspect service logs securely')
-            record['result'] = ('PROCESSED_OR_IDEMPOTENT' if any(x in ('COMPLETED', 'SKIPPED_ALREADY_COMPLETED') for x in statuses) else 'WAITING_INPUT' if any(x in ('WAITING_PAIR', 'INSUFFICIENT_OVERLAP') for x in statuses) else 'NO_STATUS')
-        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, gzip.BadGzipFile) as exc:
-            record['result'] = 'WAITING_NAV' if 'NAV' in str(exc) else 'FAILED'
-            record['error_type'] = type(exc).__name__
-            failures.append(record)
-        print(json.dumps(record), flush=True)
+    rovers = selected_rovers(args.rover)
+    selected = planned_windows(dt.datetime.now(UTC), args.grace_minutes, args.backfill_hours,
+                               args.since, args.until)
+    for start, end in selected:
+        for rover in rovers:
+            record = {'window':start.isoformat(), 'until':end.isoformat(), 'rover':rover, 'mode':'APPLY_QA' if args.apply else 'DRY_RUN'}
+            try:
+                nav, count, digest = nav_for(start, end, nav_cache, not args.no_download)
+                record.update(nav_gps_near=count, nav_sha256=digest, nav_validation='PRELIMINARY')
+                cmd = [sys.executable, str(root/'scripts/ppk_qa_worker.py'), '--site',args.site,'--base',args.base,
+                       '--rover',rover,'--base-lat',str(REF[0]),'--base-lon',str(REF[1]),'--base-alt',str(REF[2]),
+                       '--nav',str(nav),'--config',str(config),'--since',start.isoformat(),'--until',end.isoformat(),
+                       '--window-minutes','60','--min-matched',str(args.min_matched)]
+                if args.apply:
+                    cmd.append('--apply')
+                result = subprocess.run(cmd, env=env, cwd=root, capture_output=True, text=True, timeout=args.timeout_seconds)
+                record['worker_exit_code'] = result.returncode
+                # Do not echo arbitrary database/error strings; record only recognized status tokens.
+                statuses = re.findall(r'"status"\s*:\s*"([A-Z_]+)"', result.stdout)
+                record['statuses'] = statuses
+                if result.returncode or any(s == 'FAILED' for s in statuses):
+                    raise RuntimeError('worker failed; inspect service logs securely')
+                record['result'] = ('PROCESSED_OR_IDEMPOTENT' if any(x in ('COMPLETED', 'SKIPPED_ALREADY_COMPLETED') for x in statuses) else 'WAITING_INPUT' if any(x in ('WAITING_PAIR', 'INSUFFICIENT_OVERLAP') for x in statuses) else 'NO_STATUS')
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, gzip.BadGzipFile) as exc:
+                record['result'] = 'WAITING_NAV' if str(exc).startswith('WAITING_NAV') else 'FAILED'
+                record['error_type'] = type(exc).__name__
+                if str(exc).startswith('WAITING_NAV'):
+                    record['nav_reason'] = str(exc).split(' ', 1)[-1][:64]
+                failures.append(record)
+            print(json.dumps(record), flush=True)
     return 1 if failures else 0
 
 
@@ -179,7 +226,9 @@ def main():
     ap.add_argument('--timeout-seconds', type=int, default=600)
     ap.add_argument('--site', default='ITB-STAGING-01')
     ap.add_argument('--base', default='BASE-01')
-    ap.add_argument('--rover', default='ROVER-B1-02')
+    ap.add_argument('--rover', action='append', choices=DEFAULT_ROVERS, help='repeat for both QA rovers; default both')
+    ap.add_argument('--since', help='UTC backlog start; whole hour ISO-8601')
+    ap.add_argument('--until', help='UTC backlog end; max 24 hours per run')
     ap.add_argument('--min-matched', type=int, default=4)
     args = ap.parse_args()
     if not 60 <= args.timeout_seconds <= 900 or not 1 <= args.min_matched <= 100:
