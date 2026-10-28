@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import datetime as dt
 import json
 import os
@@ -45,6 +46,7 @@ STATE = CACHE / "b19_backlog_state.json"
 START = dt.datetime(2026, 10, 8, 0, tzinfo=dt.timezone.utc)
 ROVERS = {"ROVER-B1-01", "ROVER-B1-02"}
 MAX_JOBS = 3
+NAV_RETRY_INTERVAL = dt.timedelta(minutes=15)
 
 
 def utc_hour(value):
@@ -58,13 +60,29 @@ def utc_hour(value):
 
 def read_state():
     if not STATE.exists():
-        return {"cursor": START.isoformat(), "cooldowns": {}}
+        return {"cursor": START.isoformat(), "cooldowns": {}, "nav_pending": {}}
     if STATE.stat().st_size > 128 * 1024:
         raise ValueError("state too large")
     data = json.loads(STATE.read_text())
     if not isinstance(data, dict) or not isinstance(data.get("cooldowns"), dict):
         raise ValueError("invalid backlog state")
     utc_hour(data["cursor"])
+    pending = data.setdefault("nav_pending", {})
+    if not isinstance(pending, dict) or len(pending) > 1000:
+        raise ValueError("invalid NAV queue")
+    for key, entry in pending.items():
+        if not isinstance(key, str) or not isinstance(entry, dict):
+            raise ValueError("invalid NAV queue entry")
+        if entry.get("rover") not in ROVERS:
+            raise ValueError("invalid NAV rover")
+        since = utc_hour(entry["since"])
+        if key != entry["rover"] + "|" + entry["since"]:
+            raise ValueError("NAV queue key mismatch")
+        if not isinstance(entry.get("retry_at"), str):
+            raise ValueError("invalid NAV retry timestamp")
+        retry_at = dt.datetime.fromisoformat(entry["retry_at"])
+        if retry_at.utcoffset() != dt.timedelta(0):
+            raise ValueError("invalid NAV retry timezone")
     return data
 
 
@@ -136,15 +154,48 @@ except (RuntimeError, ValueError, FileNotFoundError) as exc:
 
 def record_cooldown(state, job, result, now):
     key = job["rover"] + "|" + job["since"]
-    if result in ("WAITING_NAV", "WAITING_INPUT"):
-        state["cooldowns"][key] = (now + dt.timedelta(hours=6)).isoformat()
+    if result == "WAITING_NAV":
+        state["cooldowns"][key] = (now + NAV_RETRY_INTERVAL).isoformat()
+        state.setdefault("nav_pending", {})[key] = {
+            "rover": job["rover"], "since": job["since"],
+            "retry_at": (now + NAV_RETRY_INTERVAL).isoformat(),
+        }
     else:
         state["cooldowns"].pop(key, None)
+        state.setdefault("nav_pending", {}).pop(key, None)
+        if result == "WAITING_INPUT":
+            state["cooldowns"][key] = (now + dt.timedelta(hours=6)).isoformat()
     # Bound state size, removing elapsed entries.
     state["cooldowns"] = {
         key: val for key, val in state["cooldowns"].items()
         if dt.datetime.fromisoformat(val) > now
     }
+
+def due_nav_jobs(state, now):
+    """Oldest queued NAV windows first; no discovery or DB access here."""
+    eligible = []
+    for entry in state.get("nav_pending", {}).values():
+        since = utc_hour(entry["since"])
+        if dt.datetime.fromisoformat(entry["retry_at"]) <= now:
+            eligible.append({"rover": entry["rover"],
+                             "since": entry["since"],
+                             "until": (since + dt.timedelta(hours=1)).isoformat()})
+    return sorted(eligible, key=lambda item: (item["since"], item["rover"]))[:MAX_JOBS]
+
+
+def handle_job(job, state, now):
+    nav = prepare_nav(job)
+    if nav.startswith("NAV_WAITING"):
+        outcome = "WAITING_NAV"
+        print("QA_WINDOW:", json.dumps({**job, "result": outcome}), flush=True)
+    elif nav.startswith("NAV_READY"):
+        outcome = run_scheduler(job)
+    else:
+        raise RuntimeError("unexpected NAV status")
+    record_cooldown(state, job, outcome, now)
+    write_state(state)
+    return outcome
+
 
 def run_scheduler(job, discovery=False, bounds=None, state=None):
     with tempfile.TemporaryDirectory(
@@ -235,11 +286,23 @@ def run_scheduler(job, discovery=False, bounds=None, state=None):
               if k in record}), flush=True)
         return outcome
 
-def main():
+def main(nav_retry_only=False):
+    if "MAGRIS_PPK_QA_RELEASE" not in os.environ or "MAGRIS_PPK_QA_IMAGE" not in os.environ:
+        raise RuntimeError("explicit Batch 19 release and image required")
     if not ROOT.is_dir() or not CACHE.is_dir():
         raise RuntimeError("release or NAV cache missing")
     now = dt.datetime.now(dt.timezone.utc)
     state = read_state()
+    if nav_retry_only:
+        jobs = due_nav_jobs(state, now)
+        summary = {"selected": len(jobs), "waiting_nav": 0,
+                   "waiting_input": 0, "processed_or_idempotent": 0}
+        for job in jobs:
+            outcome = handle_job(job, state, now)
+            summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
+                     "PROCESSED_OR_IDEMPOTENT": "processed_or_idempotent"}[outcome]] += 1
+        print("NAV_RETRY_SUMMARY:", json.dumps(summary), flush=True)
+        return
     bounds = discovery_bounds(state, now)
     if bounds is None:
         print("SCHEDULER_ONESHOT: NO_CLOSED_WINDOW", flush=True)
@@ -248,18 +311,9 @@ def main():
     summary = {"selected": len(jobs), "waiting_nav": 0,
                "waiting_input": 0, "processed_or_idempotent": 0}
     for job in jobs:
-        nav = prepare_nav(job)
-        if nav.startswith("NAV_WAITING"):
-            outcome = "WAITING_NAV"
-            print("QA_WINDOW:", json.dumps({**job, "result": outcome}), flush=True)
-        elif nav.startswith("NAV_READY"):
-            outcome = run_scheduler(job)
-        else:
-            raise RuntimeError("unexpected NAV status")
+        outcome = handle_job(job, state, now)
         summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
                  "PROCESSED_OR_IDEMPOTENT": "processed_or_idempotent"}[outcome]] += 1
-        record_cooldown(state, job, outcome, now)
-        write_state(state)  # preserve progress even if later work fails
     state["cursor"] = (START if bounds[1] >= (now - dt.timedelta(minutes=20)).replace(
         minute=0, second=0, microsecond=0) else bounds[1]).isoformat()
     write_state(state)
@@ -268,7 +322,11 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        parser = argparse.ArgumentParser(description="MAGRIS PPK QA backlog runner")
+        parser.add_argument("--nav-retry-only", action="store_true",
+                            help="retry previously discovered WAITING_NAV windows only")
+        args = parser.parse_args()
+        main(nav_retry_only=args.nav_retry_only)
     except Exception as exc:
         print("SCHEDULER_ONESHOT: FAILED", type(exc).__name__, flush=True)
         sys.exit(1)
