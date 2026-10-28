@@ -83,3 +83,71 @@ async def list_blast_events(
             for row in rows
         ],
     }
+
+
+# ITB 4G v1.9 / LoRa v1.7 device acknowledgment.
+from datetime import datetime
+from typing import Literal
+from fastapi import Header, HTTPException
+
+from services.device_config_service.trigger_ack_service import (
+    acknowledge_trigger_start,
+)
+
+
+class TriggerAckRequest(BaseModel):
+    device_id: str
+    trigger_start: Literal[0, 1]
+    received: Literal[True]
+    timestamp_utc: str
+
+
+@router.post("/trigger-ack")
+async def trigger_ack(
+    body: TriggerAckRequest,
+    request: Request,
+    x_device_id: str = Header(..., alias="X-Device-Id"),
+    x_device_role: str = Header(..., alias="X-Device-Role"),
+    x_iccid: str = Header(..., alias="X-ICCID"),
+    x_device_version: str = Header(..., alias="X-Device-Version"),
+) -> dict:
+    if body.device_id != x_device_id:
+        raise HTTPException(
+            status_code=400,
+            detail="device_id does not match X-Device-Id",
+        )
+
+    # ITB permits an empty timestamp when the device clock is unset.
+    if body.timestamp_utc:
+        try:
+            datetime.strptime(
+                body.timestamp_utc, "%Y-%m-%d %H:%M:%S"
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="invalid timestamp_utc",
+            ) from exc
+
+    device_timestamp = (
+        datetime.strptime(body.timestamp_utc, "%Y-%m-%d %H:%M:%S")
+        if body.timestamp_utc else None
+    )
+
+    accepted = await acknowledge_trigger_start(
+        get_db_pool(request),
+        device_id=x_device_id,
+        trigger_start=body.trigger_start,
+        device_role=x_device_role,
+        iccid=x_iccid,
+        device_version=x_device_version,
+        device_timestamp_utc=device_timestamp,
+    )
+
+    if not accepted:
+        raise HTTPException(
+            status_code=409,
+            detail="no matching active TriggerStart command",
+        )
+
+    return {"ok": True}

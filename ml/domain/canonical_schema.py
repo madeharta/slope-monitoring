@@ -33,6 +33,7 @@ class CanonicalPositionSample:
     gnss_fix_type: int
     h_acc_m: float
     source: PositionSource
+    battery_voltage_v: float | None = None
 
 
 @dataclass(frozen=True)

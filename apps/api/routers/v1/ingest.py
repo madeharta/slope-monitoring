@@ -49,10 +49,14 @@ async def upload_data(file_name: str, request: Request) -> Response:
     )
     if claim.action == "duplicate":
         try:
-            await file_uploads.assert_retained_payload_matches(
+            matches = await file_uploads.assert_retained_payload_matches(
                 file_name=headers.file_name,
                 payload=raw_body,
             )
+            if matches is not True:
+                raise ConflictError(
+                    "duplicate upload cannot be verified against retained payload"
+                )
         except UploadPayloadMismatchError as exc:
             raise ConflictError(str(exc)) from exc
         return Response(
@@ -80,15 +84,13 @@ async def upload_data(file_name: str, request: Request) -> Response:
                 rows=parsed.rawx_rows,
             )
         if parsed.position_rows:
-            by_device: dict[str, list] = defaultdict(list)
-            for row in parsed.position_rows:
-                by_device[row.device_id].append(row)
-            for rover_device_id, rows in by_device.items():
-                await canon.handle_position_rows(
-                    device_id=rover_device_id,
-                    rows=rows,
-                    file_name=headers.file_name,
-                )
+            # Validate every device against the actual HTTP uploader's site
+            # before any position group is persisted.
+            await canon.handle_position_rows(
+                device_id=headers.device_id,
+                rows=parsed.position_rows,
+                file_name=headers.file_name,
+            )
         if parsed.accel_rows:
             await canon.handle_accel_rows(
                 device_id=headers.device_id,

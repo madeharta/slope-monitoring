@@ -12,6 +12,7 @@ REQUIRED_HEADERS = (
     "X-Data-Type",
     "X-File-Name",
     "X-Record-Count",
+    "X-ICCID",
 )
 _ALLOWED_MODES = {"4g", "lora"}
 _ALLOWED_ROLES = {"base", "rover"}
@@ -23,6 +24,7 @@ RETAINED_UPLOAD_HEADER_NAMES = (
     "X-Data-Type",
     "X-File-Name",
     "X-Record-Count",
+    "X-ICCID",
     "X-Upload-Origin",
     "X-Sequence-Number",
     "X-Device-Version",
