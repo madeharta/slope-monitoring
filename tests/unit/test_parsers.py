@@ -26,22 +26,38 @@ def test_parse_gnss_csv_rejects_ubx_without_rawx_time():
         parse_gnss_csv(csv_text)
 def test_parse_lora_combined_gnss():
     csv_text = (
-        "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
-        f"BASE-01,2026-09-15 09:24:00,0,0,0,0,0,{_ubx_b64()}\n"
-        "ROVER-B1-01,2026-09-15 09:24:00,-6.123,106.98,510.1,3,0.02,0\n"
+        "device_id,timestamp_utc,latitude,longitude,altitude_m,rtk_status,h_acc_m,batt\n"
+        "BASE-01,2026-09-15 09:24:00,-6.20000000,106.80000000,500.0000,2,0.0200,12.50\n"
+        "ROVER-B1-01,2026-09-15 09:24:00,-6.20010000,106.80010000,500.1000,2,0.0300,12.40\n"
     )
     parsed = parse_combined_gnss_csv(csv_text, base_device_id="BASE-01")
-    assert len(parsed.rawx_rows) == 1
-    assert len(parsed.position_rows) == 1
+    assert parsed.rawx_rows == []
+    assert [s.device_id for s in parsed.position_rows] == ["BASE-01", "ROVER-B1-01"]
+    assert [s.role.value for s in parsed.position_rows] == ["base", "rover"]
+
 def test_parse_lora_accel_keeps_colocated_rtk():
-    csv_text = (
-        "device_id,sample_index,timestamp_utc,adxl355_x_mps2,adxl355_y_mps2,adxl355_z_mps2,"
-        "mpu9250_x_mps2,mpu9250_y_mps2,mpu9250_z_mps2,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m\n"
-        "ROVER-B1-01,0,2026-09-15 10:30:15.000,0.1,0.1,9.8,0.1,0.1,9.8,-6.123,106.98,510.1,3,0.02\n"
+    from ml.pipeline.preprocessing.lora_parser import parse_accel_latest_position
+
+    header = (
+        "device_id,sample_index,timestamp_utc,"
+        "adxl355_x_mps2,adxl355_y_mps2,adxl355_z_mps2,"
+        "mpu9250_x_mps2,mpu9250_y_mps2,mpu9250_z_mps2,"
+        "latitude,longitude,altitude_m,rtk_status,h_acc_m\n"
     )
-    samples = parse_accel_csv(csv_text)
-    assert samples[0].colocated_position is not None
-    assert samples[0].colocated_position.h_acc_m == 0.02
+    raw = header + (
+        "ROVER-B1-01,0,2026-09-15 10:30:15.000,"
+        "0.1,0.1,9.8,0.1,0.1,9.8,0,0,0,0,0\n"
+        "ROVER-B1-01,0,2026-09-15 10:30:15.000,"
+        "0,0,0,0,0,0,-6.12300000,106.98000000,510.1000,2,0.0200\n"
+    )
+    samples = parse_accel_csv(raw)
+    positions = parse_accel_latest_position(raw)
+
+    assert len(samples) == 1
+    assert samples[0].colocated_position is None
+    assert len(positions) == 1
+    assert positions[0].h_acc_m == 0.02
+
 def test_parse_4g_accel_requires_one_rawx_only():
     header = (
         "device_id,sample_index,timestamp_utc,adxl355_x_mps2,adxl355_y_mps2,adxl355_z_mps2,"

@@ -17,6 +17,7 @@ def _headers(**overrides):
         "X-Data-Type": "gnss",
         "X-File-Name": "gnss_ROVER-B1-01_20260924_2100.csv",
         "X-Record-Count": "1",
+        "X-ICCID": "89860012345678901234",
     }
     h.update(overrides)
     return h
@@ -51,16 +52,17 @@ def test_record_count_is_enforced():
     with pytest.raises(InvalidCsvError):
         validate_record_count(csv_text, 2)
 def test_lora_combined_gnss_splits_base_rawx_and_rover_rtk():
-    payload = _ubx_b64()
     csv_text = (
-        "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
-        f"BASE-01,2026-09-24 21:00:00,0,0,0,0,0,{payload}\n"
-        "ROVER-B1-01,2026-09-24 21:00:00,-6.1,107.5,500.0,3,0.02,0\n"
+        "device_id,timestamp_utc,latitude,longitude,altitude_m,rtk_status,h_acc_m,batt\n"
+        "BASE-01,2026-09-24 21:00:00,-6.10000000,107.50000000,500.0000,2,0.0200,12.50\n"
+        "ROVER-B1-01,2026-09-24 21:00:00,-6.10010000,107.50010000,500.1000,2,0.0300,12.40\n"
     )
     parsed = parse_combined_gnss_csv(csv_text, base_device_id="BASE-01")
-    assert len(parsed.rawx_rows) == 1
-    assert len(parsed.position_rows) == 1
-    assert parsed.position_rows[0].device_id == "ROVER-B1-01"
+    assert parsed.rawx_rows == []
+    assert len(parsed.position_rows) == 2
+    assert parsed.position_rows[0].role.value == "base"
+    assert parsed.position_rows[1].role.value == "rover"
+
 def test_4g_blast_requires_exactly_one_auxiliary_rawx():
     payload = _ubx_b64()
     header = (
@@ -78,17 +80,14 @@ def test_4g_blast_requires_exactly_one_auxiliary_rawx():
 
 
 def test_lora_rover_zero_payload_is_not_base64_decoded():
-    payload = _ubx_b64()
     csv_text = (
-        "device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n"
-        f"BASE-01,2026-10-08 14:45:00,0,0,0,0,0,{payload}\n"
-        "ROVER-B1-02,2026-10-08 14:45:00,-6.86714790,107.57878470,884.2,3,0.73,0\n"
+        "device_id,timestamp_utc,latitude,longitude,altitude_m,rtk_status,h_acc_m,batt\n"
+        "BASE-01,2026-10-08 14:45:00,-6.86710000,107.57870000,884.0000,2,0.0200,12.50\n"
+        "ROVER-B1-02,2026-10-08 14:45:00,-6.86714790,107.57878470,884.2000,2,0.7300,12.40\n"
     )
     parsed = parse_combined_gnss_csv(csv_text, base_device_id="BASE-01")
-    assert len(parsed.rawx_rows) == 1
-    assert len(parsed.position_rows) == 1
-    assert parsed.position_rows[0].device_id == "ROVER-B1-02"
-
+    assert parsed.rawx_rows == []
+    assert [s.device_id for s in parsed.position_rows] == ["BASE-01", "ROVER-B1-02"]
 
 def test_4g_rejects_gnss_without_rawx_time():
     payload = _ubx_b64()

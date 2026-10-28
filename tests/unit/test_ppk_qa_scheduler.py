@@ -1,3 +1,7 @@
+import gzip
+import io
+
+import pytest
 import datetime as dt
 import importlib.util
 from pathlib import Path
@@ -24,3 +28,24 @@ def test_invalid_grace_fails_closed():
         assert False
     except ValueError:
         pass
+
+
+def test_bounded_nav_decompress_valid():
+    assert module.bounded_nav_decompress(gzip.compress(b'valid-data')) == b'valid-data'
+
+
+def test_bounded_nav_decompress_rejects_compressed_size(monkeypatch):
+    monkeypatch.setattr(module, 'MAX_NAV_GZIP_BYTES', 5)
+    with pytest.raises(ValueError, match='compressed size'):
+        module.bounded_nav_decompress(gzip.compress(b'valid'))
+
+
+def test_bounded_nav_decompress_rejects_expansion_bomb(monkeypatch):
+    monkeypatch.setattr(module, 'MAX_NAV_EXPANDED_BYTES', 128)
+    with pytest.raises(ValueError, match='expanded size'):
+        module.bounded_nav_decompress(gzip.compress(b'A' * 4096))
+
+
+def test_bounded_nav_decompress_rejects_truncated_gzip():
+    with pytest.raises(ValueError, match='corrupt or truncated'):
+        module.bounded_nav_decompress(gzip.compress(b'nav-data')[:-5])

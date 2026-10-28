@@ -60,9 +60,9 @@ def test_ppk_command_uses_l_not_b_and_has_plain_nav(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_no_rover_baseline_suppresses_unsafe_displacement():
     rows = parse_combined_gnss_csv(
-        'device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n'
-        'BASE-01,2026-09-15 09:24:00,0,0,0,0,0,tWIB\n'
-        'ROVER-01,2026-09-15 09:24:00,-6.2,106.8,500,3,0.02,0\n',
+        'device_id,timestamp_utc,latitude,longitude,altitude_m,rtk_status,h_acc_m,batt\n'
+        'BASE-01,2026-09-15 09:24:00,-6.20000000,106.80000000,500.0000,2,0.0200,12.50\n'
+        'ROVER-01,2026-09-15 09:24:00,-6.20000000,106.80000000,500.0000,2,0.0200,12.40\n',
         base_device_id='BASE-01',
     ).position_rows
     service = CanonicalizationService(None, lambda _: None)
@@ -74,9 +74,9 @@ async def test_no_rover_baseline_suppresses_unsafe_displacement():
 @pytest.mark.asyncio
 async def test_approved_rover_baseline_zero_at_initial_position():
     rows = parse_combined_gnss_csv(
-        'device_id,timestamp_utc,latitude,longitude,altitude_m,gnss_fix_type,h_acc_m,gnss_raw_payload_base64\n'
-        'BASE-01,2026-09-15 09:24:00,0,0,0,0,0,tWIB\n'
-        'ROVER-01,2026-09-15 09:24:00,-6.2,106.8,500,3,0.02,0\n',
+        'device_id,timestamp_utc,latitude,longitude,altitude_m,rtk_status,h_acc_m,batt\n'
+        'BASE-01,2026-09-15 09:24:00,-6.20000000,106.80000000,500.0000,2,0.0200,12.50\n'
+        'ROVER-01,2026-09-15 09:24:00,-6.20000000,106.80000000,500.0000,2,0.0200,12.40\n',
         base_device_id='BASE-01',
     ).position_rows
     service = CanonicalizationService(None, lambda _: None)
