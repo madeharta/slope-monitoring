@@ -13,6 +13,7 @@ export default function BlastControl() {
   const [siteId, setSiteId] = useState("");
   const [baseId, setBaseId] = useState("");
   const [config, setConfig] = useState(null);
+  const [triggerStatus, setTriggerStatus] = useState(null);
   const [timeoutMinutes, setTimeoutMinutes] = useState("");
 
   const [busy, setBusy] = useState(false);
@@ -45,6 +46,7 @@ export default function BlastControl() {
     if (!siteId) {
       setBaseId("");
       setConfig(null);
+      setTriggerStatus(null);
       return;
     }
 
@@ -81,6 +83,37 @@ export default function BlastControl() {
     setConfig(nextConfig);
     setTimeoutMinutes(String(nextConfig.TimeOutTrigger ?? ""));
   }
+
+  async function refreshTriggerStatus(targetBaseId = baseId) {
+    if (!targetBaseId) return;
+    const response = await authFetch(
+      `/api/v1/blast/trigger-status?base_id=${encodeURIComponent(targetBaseId)}`
+    );
+    if (!response.ok) throw new Error(`Trigger status HTTP ${response.status}`);
+    const body = await response.json();
+    if (targetBaseId === baseId) setTriggerStatus(body);
+  }
+
+  useEffect(() => {
+    if (!baseId) return;
+    setTriggerStatus(null);
+    let active = true;
+    async function update() {
+      try {
+        const response = await authFetch(
+          `/api/v1/blast/trigger-status?base_id=${encodeURIComponent(baseId)}`
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json();
+        if (active) setTriggerStatus(body);
+      } catch (err) {
+        if (active) setTriggerStatus({ error: err.message });
+      }
+    }
+    update();
+    const timer = window.setInterval(update, 10000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [baseId, authFetch]);
 
   useEffect(() => {
     if (!baseId) return;
@@ -138,6 +171,7 @@ export default function BlastControl() {
       );
 
       await refreshConfig();
+      await refreshTriggerStatus();
     } catch (err) {
       setError(err?.message || "Failed to create blast trigger request.");
     } finally {
@@ -181,6 +215,7 @@ export default function BlastControl() {
       );
 
       await refreshConfig();
+      await refreshTriggerStatus();
     } catch (err) {
       setError(err?.message || "Failed to reset TriggerStart.");
     } finally {
@@ -349,6 +384,38 @@ export default function BlastControl() {
             {error}
           </div>
         )}
+      </section>
+
+      <section className="panel blast-card" aria-label="Trigger delivery and ACK">
+        <div className="blast-section-head"><div><h2>TriggerStart · Konfirmasi perangkat</h2>
+          <span>Status server dipisahkan dari pengakuan perangkat.</span></div></div>
+        <div className="blast-config-grid">
+          <div><span>Server TriggerStart</span><strong>
+            {triggerStatus?.server?.trigger_start == null ? "—" :
+              `${triggerStatus.server.trigger_start} · ${triggerStatus.server.trigger_start === 0 ? "RESET" : "START"}`}
+          </strong><small>{triggerStatus?.server?.reset_reason === "AUTO_TIMEOUT" ? "RESET otomatis karena timeout" : "Status konfigurasi server"}</small></div>
+          <div><span>ACK perangkat</span><strong>
+            {triggerStatus?.delivery?.acked ? `ACK ${triggerStatus.delivery.trigger_start} diterima` :
+              triggerStatus?.delivery?.pending ? "Menunggu ACK" : "Belum terkonfirmasi"}
+          </strong><small>{triggerStatus?.delivery?.ack_server_at ?
+            `Server menerima: ${new Date(triggerStatus.delivery.ack_server_at).toLocaleString()}` :
+            "Tidak ada ACK yang cocok untuk pending command terbaru"}</small></div>
+        </div>
+        {triggerStatus?.delivery?.ack_device_utc &&
+          <div className="blast-delivery-note">Waktu perangkat (UTC): <strong>{triggerStatus.delivery.ack_device_utc}</strong></div>}
+        {triggerStatus?.error && <div className="admin-error" role="alert">Status ACK belum tersedia: {triggerStatus.error}</div>}
+        <h3>Riwayat TriggerStart</h3>
+        {triggerStatus?.events?.length ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            {triggerStatus.events.map((item, index) => (
+              <div className="blast-delivery-note" key={`${item.kind}-${item.occurred_at}-${index}`}>
+                <strong>{item.kind === "DEVICE_ACK" ? `ACK perangkat · ${item.trigger_start}` : "RESET otomatis · timeout"}</strong>
+                <span> · {new Date(item.occurred_at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p>Belum ada riwayat ACK atau timeout.</p>}
+        <div className="blast-delivery-note">ACK menyatakan perangkat melaporkan penyimpanan konfigurasi. Bukan bukti peledakan atau ACK spesifik command bila firmware tidak mengirim command ID.</div>
       </section>
 
       <details className="panel blast-flow">
