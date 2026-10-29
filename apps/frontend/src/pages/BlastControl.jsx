@@ -250,8 +250,16 @@ export default function BlastControl() {
         </span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 560px), 1fr))", gap: 20, alignItems: "stretch" }}>
-      <section className="panel blast-card" style={{ minWidth: 0 }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 520px), 1fr))",
+        gap: 24,
+        alignItems: "stretch",
+        width: "100%",
+        maxWidth: 1440,
+        margin: "24px auto 0",
+      }}>
+      <section className="panel blast-card" style={{ minWidth: 0, width: "100%", maxWidth: "none" }}>
         <div className="blast-section-head">
           <div>
             <h2>Blast command</h2>
@@ -387,7 +395,7 @@ export default function BlastControl() {
         )}
       </section>
 
-      <section className="panel blast-card" aria-label="TriggerStart delivery and ACK" style={{ minWidth: 0 }}>
+      <section className="panel blast-card" aria-label="TriggerStart delivery and ACK" style={{ minWidth: 0, width: "100%", maxWidth: "none" }}>
         <div className="blast-section-head"><div><h2>TriggerStart · Konfirmasi perangkat</h2></div></div>
         <div className="blast-config-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 210px), 1fr))" }}>
           <div><span>Server TriggerStart</span><strong>
@@ -407,7 +415,7 @@ export default function BlastControl() {
       </section>
       </div>
 
-      <section className="panel blast-card" aria-label="Riwayat TriggerStart" style={{ marginTop: 24 }}>
+      <section className="panel blast-card" aria-label="Riwayat TriggerStart" style={{ width: "100%", maxWidth: 1440, margin: "24px auto 0" }}>
         <h3>Riwayat TriggerStart</h3>
         {triggerStatus?.events?.length ? (
           <div style={{ display: "grid", gap: 8 }}>
