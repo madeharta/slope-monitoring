@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { getSite } from "../api";
@@ -260,6 +260,7 @@ export default function SlopeDetail() {
   const [data, setData] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [lastLoadedRange, setLastLoadedRange] = useState(null);
+  const autoAnchoredSites = useRef(new Set());
   const [device, setDevice] = useState(null); // isolated sensor group, or null
   const [selectedRover, setSelectedRover] = useState(null);
   const [detailView, setDetailView] = useState("charts");
@@ -323,7 +324,7 @@ export default function SlopeDetail() {
 
         setData(d);
         setLoadError(null);
-        setLastLoadedRange({ hours, from: fromIso, to: toIso });
+        setLastLoadedRange({ siteId: id, hours, from: fromIso, to: toIso });
         setTableNow(Date.now());
 
         retryCount = 0;
@@ -371,6 +372,23 @@ export default function SlopeDetail() {
 
   const name = overview?.slopes.find((s) => s.site_id === id)?.name || id;
   const site = overview?.slopes.find((s) => s.site_id === id);
+  // On the first successful site fetch, shift the window to the latest known
+  // measurement. Keep subsequent manual date selections unchanged.
+  useEffect(() => {
+    if (!data || lastLoadedRange?.siteId !== id || autoAnchoredSites.current.has(id)) return;
+    const timestamps = (data.series || []).flatMap((series) =>
+      (series.points || []).map((point) => Date.parse(point[0])).filter(Number.isFinite));
+    const staleMs = Date.parse(data.latest_stale_reading?.time || "");
+    const latestMs = Number.isFinite(staleMs)
+      ? staleMs : (timestamps.length ? Math.max(...timestamps) : NaN);
+    if (!Number.isFinite(latestMs) || latestMs > Date.now()) return;
+    autoAnchoredSites.current.add(id);
+    const targetFrom = toDatetimeLocal(new Date(latestMs - 13 * DAY));
+    const targetTo = toDatetimeLocal(new Date(Math.min(Date.now(), latestMs + 60 * 60_000)));
+    setCustomFrom(targetFrom);
+    setCustomTo(targetTo);
+  }, [data, id, lastLoadedRange]);
+
   // Only historical API series are rendered: never merge live events.
   // map historical series into one point-array per quantity
   const byQ = useMemo(() => {
@@ -549,7 +567,6 @@ export default function SlopeDetail() {
           <span className="site-meta">{id} · {site.lat?.toFixed(4)}, {site.lon?.toFixed(4)}</span>
         )}
         <div className="tabs" role="group" aria-label="Historical measurement time range" style={{gap: 8, flexWrap: "wrap"}}>
-          <span style={{fontSize: 12, fontWeight: 700, color: "var(--ink-2)"}}>Historical range</span>
           <span className="tabs-custom-range">
             <input type="datetime-local" className="tabs-custom on" value={customFrom}
               max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} title="From" aria-label="Historical start" />
