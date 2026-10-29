@@ -16,6 +16,40 @@ SECRETS = pathlib.Path("/etc/landslidemon/secrets")
 IMAGE = os.environ.get("MAGRIS_PPK_QA_IMAGE", "landslidemon-api:91ad329")
 NETWORK = "landslidemon_db_internal"
 
+class ContainerExecutionError(RuntimeError):
+    """Retain safe diagnostics, never stdout/stderr or credentials."""
+    def __init__(self, exit_code):
+        self.exit_code = exit_code
+        super().__init__("container execution failed")
+
+
+def diagnostic(stage, exc, job=None):
+    record = {"stage": stage, "error_type": type(exc).__name__}
+    if isinstance(exc, ContainerExecutionError):
+        record["exit_code"] = exc.exit_code
+    if isinstance(exc, subprocess.TimeoutExpired):
+        record["timeout_s"] = exc.timeout
+    if job is not None:
+        record.update({"rover": job.get("rover"), "window": job.get("since")})
+    print("QA_STAGE_FAILED:", json.dumps(record), flush=True)
+
+
+def nav_status(output):
+    """Accept exactly one terminal status, ignoring innocuous progress lines."""
+    statuses = [line.strip() for line in output.splitlines()
+                if line.strip().startswith(("NAV_READY", "NAV_WAITING"))]
+    if len(statuses) != 1:
+        raise RuntimeError("invalid NAV status count")
+    status = statuses[0]
+    if status == "NAV_WAITING":
+        return status
+    parts = status.split()
+    if len(parts) != 3 or parts[0] != "NAV_READY" or not parts[1].isdigit() \
+            or int(parts[1]) <= 0 or not re.fullmatch(r"[0-9a-f]{16}", parts[2]):
+        raise RuntimeError("invalid NAV_READY fields")
+    return status
+
+
 def docker(args, timeout):
     result = subprocess.run(
         ["docker", *args],
@@ -27,7 +61,7 @@ def docker(args, timeout):
     if result.returncode:
         # Avoid printing arbitrary stderr containing connection details.
         print("CONTAINER_FAILED: exit", result.returncode, flush=True)
-        raise RuntimeError("container execution failed")
+        raise ContainerExecutionError(result.returncode)
 
     return result.stdout
 
@@ -335,7 +369,11 @@ def main(nav_retry_only=False):
         jobs = due_nav_jobs(state, now)
         summary = {"selected": len(jobs), "waiting_nav": 0, "nav_ready": 0}
         for job in jobs:
-            outcome = retry_nav_only(job, state, now)
+            try:
+                outcome = retry_nav_only(job, state, now)
+            except Exception as exc:
+                diagnostic("NAV_RETRY", exc, job)
+                raise
             summary[{"WAITING_NAV": "waiting_nav", "NAV_READY": "nav_ready"}[outcome]] += 1
         print("NAV_RETRY_SUMMARY:", json.dumps(summary), flush=True)
         return
@@ -345,7 +383,11 @@ def main(nav_retry_only=False):
         summary = {"selected": len(ready), "waiting_nav": 0,
                    "waiting_input": 0, "processed_or_idempotent": 0}
         for job in ready:
-            outcome = run_scheduler(job)
+            try:
+                outcome = run_scheduler(job)
+            except Exception as exc:
+                diagnostic("QA_READY_PROCESS", exc, job)
+                raise
             record_cooldown(state, job, outcome, now)
             write_state(state)
             summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
@@ -356,11 +398,19 @@ def main(nav_retry_only=False):
     if bounds is None:
         print("SCHEDULER_ONESHOT: NO_CLOSED_WINDOW", flush=True)
         return
-    jobs = run_scheduler(None, discovery=True, bounds=bounds, state=state)
+    try:
+        jobs = run_scheduler(None, discovery=True, bounds=bounds, state=state)
+    except Exception as exc:
+        diagnostic("BACKLOG_DISCOVERY", exc)
+        raise
     summary = {"selected": len(jobs), "waiting_nav": 0,
                "waiting_input": 0, "processed_or_idempotent": 0}
     for job in jobs:
-        outcome = handle_job(job, state, now)
+        try:
+            outcome = handle_job(job, state, now)
+        except Exception as exc:
+            diagnostic("QA_WINDOW", exc, job)
+            raise
         summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
                  "PROCESSED_OR_IDEMPOTENT": "processed_or_idempotent"}[outcome]] += 1
     state["cursor"] = (START if bounds[1] >= (now - dt.timedelta(minutes=20)).replace(
