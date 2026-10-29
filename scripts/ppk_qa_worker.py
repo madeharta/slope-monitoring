@@ -63,6 +63,20 @@ def join_rawx(rows: list[dict]) -> bytes:
         frames.append(frame)
     return b"".join(frames)
 
+def rawx_measurement_count(row: dict) -> int:
+    """Read RXM-RAWX numMeas after full frame validation."""
+    frame = join_rawx([row])
+
+    if len(frame) < 24:
+        raise ValueError("RAWX header incomplete")
+
+    payload_length = int.from_bytes(frame[4:6], "little")
+    num_meas = frame[17]
+
+    if payload_length != 16 + 32 * num_meas:
+        raise ValueError("RAWX measurement payload length mismatch")
+
+    return num_meas
 
 @dataclass(frozen=True)
 class Scope:
@@ -238,6 +252,38 @@ async def run_once(args):
                 print(json.dumps({'window': cursor.isoformat(), 'status': 'WAITING_PAIR', 'base':len(base),'rover':len(rover)}))
                 cursor = stop
                 continue
+            # Fail closed on malformed RAWX before applying eligibility filters.
+            join_rawx(base)
+            join_rawx(rover)
+
+            usable_base = [r for r in base if rawx_measurement_count(r) > 0]
+            usable_rover = [r for r in rover if rawx_measurement_count(r) > 0]
+
+            if not usable_base:
+                print(json.dumps({
+                    "window": cursor.isoformat(),
+                    "status": "WAITING_PAIR",
+                    "reason_code": "BASE_RAWX_ZERO_MEASUREMENTS",
+                    "base_total": len(base),
+                    "base_usable": 0,
+                }))
+                cursor = stop
+                continue
+
+            if not usable_rover:
+                print(json.dumps({
+                    "window": cursor.isoformat(),
+                    "status": "WAITING_PAIR",
+                    "reason_code": "ROVER_RAWX_ZERO_MEASUREMENTS",
+                    "rover_total": len(rover),
+                    "rover_usable": 0,
+                }))
+                cursor = stop
+                continue
+
+            base = usable_base
+            rover = usable_rover
+
             rover_overlap = sum(any(abs((r['time']-b['time']).total_seconds()) <= 2 for b in base) for r in rover)
             if rover_overlap < args.min_matched:
                 print(json.dumps({'window': cursor.isoformat(), 'status': 'INSUFFICIENT_OVERLAP','matched':rover_overlap}))
