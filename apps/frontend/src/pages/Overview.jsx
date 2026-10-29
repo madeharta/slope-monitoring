@@ -50,7 +50,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 
 function Spark({ data, c, area }) {
   const W = 250, H = 62, pad = 7;
-  if (!data.length) data = [0, 0];
+  if (!data.length) return null;
   const mn = Math.min(...data), mx = Math.max(...data);
   const X = (i) => pad + (i / Math.max(data.length - 1, 1)) * (W - 2 * pad);
   const Y = (v) => H - pad - ((v - mn) / (mx - mn || 1)) * (H - 2 * pad);
@@ -268,7 +268,7 @@ export default function Overview() {
 
       {/* BOTTOM-LEFT — weather + device stats */}
       <div className="ov-foot">
-        <div className="wx">
+        {operationalReady && dispArr.length > 0 && <div className="wx">
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9" /><line x1="8" y1="19" x2="8" y2="21" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="16" y1="19" x2="16" y2="21" />
           </svg>
@@ -276,8 +276,8 @@ export default function Overview() {
             <span className="wx-v">{peakDisp} <i>mm</i></span>
             <span className="wx-k">Displacement · research only</span>
           </span>
-        </div>
-        <span className="vdiv" />
+        </div>}
+        {operationalReady && dispArr.length > 0 && <span className="vdiv" />}
         <div className="fstat"><span className="fs-v">{deviceHealth.online}<i>/{deviceHealth.total}</i></span><span className="fs-k">Devices online</span></div>
         <div className="fstat"><span className="fs-v warn">{deviceHealth.stale}</span><span className="fs-k">Devices stale</span></div>
         <div className="fstat"><span className="fs-v">{deviceHealth.offline + deviceHealth.unknown}</span><span className="fs-k">Offline / unknown</span></div>
@@ -287,14 +287,18 @@ export default function Overview() {
 
       {/* RIGHT — status summary + live graphs (moved here from the old slide panel) */}
       <div className="ov-right">
-        <div className="wcard">
-          <div className="wcard-h"><h3>Displacement (baseline-approved only; not field validated)</h3><span className="wgic">⋯</span></div>
-          <div className="wcard-b"><Spark data={dispArr} c={pal.spark} area /></div>
-        </div>
-        <div className="wcard">
-          <div className="wcard-h"><h3>Vibration (PPV) · observations</h3><span className="wgic">⋯</span></div>
-          <div className="wcard-b"><Spark data={vibArr} c={pal.spark} area={pal.area} /></div>
-        </div>
+        {operationalReady && dispArr.length > 0 && (
+          <div className="wcard">
+            <div className="wcard-h"><h3>Displacement (baseline-approved only; not field validated)</h3><span className="wgic">⋯</span></div>
+            <div className="wcard-b"><Spark data={dispArr} c={pal.spark} area /></div>
+          </div>
+        )}
+        {vibArr.length > 0 && (
+          <div className="wcard">
+            <div className="wcard-h"><h3>Vibration (PPV) · observations</h3><span className="wgic">⋯</span></div>
+            <div className="wcard-b"><Spark data={vibArr} c={pal.spark} area={pal.area} /></div>
+          </div>
+        )}
         <div className="wcard ppk-overview-card">
           <div className="wcard-h"><h3>PPK engine QA · ROVER-B1-02</h3><span className="wgic" title="Experimental / unvalidated">ⓘ</span></div>
           <div className="wcard-b">
