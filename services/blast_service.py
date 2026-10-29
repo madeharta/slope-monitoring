@@ -5,9 +5,11 @@ from services.device_config_service.config_repository import DeviceConfigReposit
 async def trigger_blast_atomic(
     pool,
     base_id: str,
-    timeout_minutes: int | None,
+    timeout_minutes: int,
     requested_by: str | int,
 ) -> int:
+    if type(timeout_minutes) is not int or timeout_minutes <= 0:
+        raise ValueError("timeout_minutes must be a positive integer")
     repo = DeviceConfigRepository(pool)
     audit = AuditLog(pool)
     # JWT sub is serialized as text, while blast_trigger_commands.requested_by is BIGINT.

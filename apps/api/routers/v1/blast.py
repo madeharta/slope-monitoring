@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/v1/blast", tags=["blast"])
 class TriggerRequest(BaseModel):
     base_id: str
     # API contract: TimeOutTrigger is expressed in minutes, not seconds.
-    timeout_minutes: int | None = Field(default=None, gt=0)
+    timeout_minutes: int = Field(gt=0, strict=True)
 
 class ResetRequest(BaseModel):
     base_id: str
