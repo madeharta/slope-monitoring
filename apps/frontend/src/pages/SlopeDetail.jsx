@@ -9,7 +9,6 @@ import TimeToFailure, { estimateFailure } from "../components/TimeToFailure.jsx"
 import MeasurementTable from "../components/MeasurementTable.jsx";
 
 const LABEL = { bahaya: "Danger", siaga: "Warning", normal: "Normal", unknown: "Not verified" };
-const HOURS = [["6h", 6], ["24h", 24], ["3d", 72], ["7d", 168]];
 // Derived-quantity thresholds that have no backend entry (velocity is computed
 // from the displacement series, so it is not in config.THRESHOLDS).
 const VEL_TH = { dir: "high", siaga: 5, bahaya: 10 };
@@ -248,12 +247,16 @@ export default function SlopeDetail() {
   }, [id, authFetch]);
 
   const navigate = useNavigate();
-  const { overview, recent, variant } = useStore((s) => ({ overview: s.overview, recent: s.recent, variant: s.variant }));
+  const { overview, variant } = useStore((s) => ({ overview: s.overview, variant: s.variant }));
   const pal = getPalette(variant);
   const operationalReady = overview?.validation?.operational_ready === true;
-  const [hours, setHours] = useState(24);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [hours] = useState(13 * 24); // API fallback only; range is always explicit.
+  const [initialRange] = useState(() => {
+    const now = new Date();
+    return { from: toDatetimeLocal(new Date(now.getTime() - 13 * DAY)), to: toDatetimeLocal(now) };
+  });
+  const [customFrom, setCustomFrom] = useState(initialRange.from);
+  const [customTo, setCustomTo] = useState(initialRange.to);
   const [data, setData] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [lastLoadedRange, setLastLoadedRange] = useState(null);
@@ -368,25 +371,14 @@ export default function SlopeDetail() {
 
   const name = overview?.slopes.find((s) => s.site_id === id)?.name || id;
   const site = overview?.slopes.find((s) => s.site_id === id);
-  const live = useMemo(
-    () => (customFrom && customTo ? [] : (recent[id] || []).filter(
-      (e) => new Date(e.t) > new Date(Date.now() - hours * 3_600_000),
-    )),
-    [recent, id, hours, customFrom, customTo],
-  );
-
-  // merge historical series + live tail into one point-array per quantity
+  // Only historical API series are rendered: never merge live events.
+  // map historical series into one point-array per quantity
   const byQ = useMemo(() => {
     const m = {};
     for (const s of data?.series || []) m[s.quantity] = { unit: s.unit, pts: s.points.map((p) => [p[0], p[1]]) };
-    for (const ev of live) {
-      if (ev.value == null) continue;
-      if (!m[ev.quantity]) m[ev.quantity] = { unit: ev.unit, pts: [] };
-      m[ev.quantity].pts.push([ev.t, ev.value]);
-    }
     for (const q in m) m[q].pts.sort((a, b) => new Date(a[0]) - new Date(b[0]));
     return m;
-  }, [data, live]);
+  }, [data]);
 
   const Q = (q) => (byQ[q] ? byQ[q].pts : []);
   const roverIds = useMemo(
@@ -429,16 +421,19 @@ export default function SlopeDetail() {
   const BAND = pal.band;          // rgba band fills
   const col = (q) => pal.line[q] || pal.lineDefault;
 
-  const latestHistoricalMs = Date.parse(data?.latest_stale_reading?.time || "");
+  const latestPointTimes = (data?.series || []).flatMap((s) =>
+    (s.points || []).map((p) => Date.parse(p[0])).filter(Number.isFinite));
+  const candidateLatest = Date.parse(data?.latest_stale_reading?.time || "");
+  const latestHistoricalMs = Number.isFinite(candidateLatest)
+    ? candidateLatest : (latestPointTimes.length ? Math.max(...latestPointTimes) : NaN);
   const canViewHistorical = Number.isFinite(latestHistoricalMs) && latestHistoricalMs <= Date.now();
   const viewLatestAvailable = () => {
     if (!canViewHistorical) return;
-    // Include earlier measurements as well as the most recent one; do not
-    // reinterpret upload/received_at timestamps as sensor measurement times.
-    const from = new Date(latestHistoricalMs - 14 * DAY);
+    const from = new Date(latestHistoricalMs - 13 * DAY);
     const to = new Date(Math.min(Date.now(), latestHistoricalMs + 60 * 60_000));
     setCustomFrom(toDatetimeLocal(from));
     setCustomTo(toDatetimeLocal(to));
+    setDetailView("charts");
   };
 
   // device-isolate opacity: dim series not in the selected group
@@ -500,7 +495,6 @@ export default function SlopeDetail() {
 
   const hasDisplacementSeries = ["displacement", "disp_e", "disp_n", "disp_u"].some((q) => QD(q).length > 0);
   const hasTiltSeries = ["tilt_x", "tilt_y"].some((q) => Q(q).length > 0);
-  const hasBlastSeries = ["ppa", "ppa_mpu9250", "ppv", "ppv_mpu9250"].some((q) => Q(q).length > 0);
   const hasVelocitySeries = operationalReady && (derived.velocity.length > 0 || derived.acceleration.length > 0);
 
   const formatWeather = (value, digits = 1) => {
@@ -521,13 +515,7 @@ export default function SlopeDetail() {
               <div style={{ marginTop: 6 }}>
                 Last recorded measurement: {new Date(data.latest_stale_reading.time).toLocaleString("en-GB", { timeZone: "Asia/Jakarta" })} WIB.
                 Historical data may be available through a custom date range.
-                {canViewHistorical && (
-                  <div style={{ marginTop: 10 }}>
-                    <button type="button" onClick={viewLatestAvailable}>
-                      View Latest Available Data (14-day window)
-                    </button>
-                  </div>
-                )}
+
               </div>
             )}
           </div>
@@ -560,34 +548,20 @@ export default function SlopeDetail() {
         {site && (
           <span className="site-meta">{id} · {site.lat?.toFixed(4)}, {site.lon?.toFixed(4)}</span>
         )}
-        <div className="tabs" role="group" aria-label="Time range">
-          {HOURS.map(([lbl, h]) => (
-            <button key={h} className={h === hours ? "on" : ""} onClick={() => { setHours(h); setCustomFrom(""); setCustomTo(""); }}>{lbl}</button>
-          ))}
-          {/* Rentang kustom (2026-09-22, revisi — start SAJA sebelumnya,
-              sekarang start+end penuh sesuai permintaan). Tidak perlu
-              polling 8s untuk rentang ini (lihat useEffect) karena data
-              masa lalu tidak berubah. */}
+        <div className="tabs" role="group" aria-label="Historical measurement time range" style={{gap: 8, flexWrap: "wrap"}}>
+          <span style={{fontSize: 12, fontWeight: 700, color: "var(--ink-2)"}}>Historical range</span>
           <span className="tabs-custom-range">
-            <input
-              type="datetime-local"
-              className={"tabs-custom" + (customFrom ? " on" : "")}
-              value={customFrom}
-              max={customTo || undefined}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              title="From"
-            />
+            <input type="datetime-local" className="tabs-custom on" value={customFrom}
+              max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} title="From" aria-label="Historical start" />
             <span className="tabs-custom-sep">–</span>
-            <input
-              type="datetime-local"
-              className={"tabs-custom" + (customTo ? " on" : "")}
-              value={customTo}
-              min={customFrom || undefined}
-              max={new Date(Date.now() - Date.now() % 60000).toISOString().slice(0, 16)}
-              onChange={(e) => setCustomTo(e.target.value)}
-              title="Until"
-            />
+            <input type="datetime-local" className="tabs-custom on" value={customTo}
+              min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} title="Until" aria-label="Historical end" />
           </span>
+          <button type="button" onClick={viewLatestAvailable} disabled={!canViewHistorical}
+            title={canViewHistorical ? "Show the latest recorded measurements" : "No latest reading known yet"}
+            style={{background:canViewHistorical ? "#176b83" : "#9ba8b3", color:"white", border:"1px solid #176b83", borderRadius:8, padding:"9px 13px", fontWeight:700, cursor:canViewHistorical ? "pointer" : "not-allowed", whiteSpace:"nowrap"}}>
+            View Latest Available Data
+          </button>
         </div>
       </div>
 
@@ -723,28 +697,43 @@ export default function SlopeDetail() {
         </Panel>
         )}
 
-        {hasBlastSeries && (
-        <Panel title="Blast Vibration Metrics" sub="technical event features · UNVALIDATED" right={readout(last(Q("ppv")), "mm/s", "normal")}>
-          <div className="panel-body">
-            <Legend items={[
-              { label: "ADXL355 PPA · g", color: col("ppa") },
-              { label: "MPU9250 PPA · g", color: col("ppa_mpu9250"), dash: "dashed" },
-              { label: "ADXL355 PPV · mm/s", color: col("ppv") },
-              { label: "MPU9250 PPV · mm/s", color: col("ppv_mpu9250"), dash: "dashed" },
-            ]} />
-            <PanelChart timeRange={chartRange} height={232}
-              left={{ name: "g", min: 0, max: ppaMax }}
-              right={{ name: "mm/s", min: 0, max: ppvMax }}
-              series={[
-                { name: "MPU9250 PPA", data: Q("ppa_mpu9250"), color: col("ppa_mpu9250"), width: 1.5, dash: "dashed", opacity: op("ppa_mpu9250") },
-                { name: "ADXL355 PPA", data: Q("ppa"), color: col("ppa"), width: 2.2, z: 3, opacity: op("ppa") },
-                { name: "MPU9250 PPV", data: Q("ppv_mpu9250"), color: col("ppv_mpu9250"), width: 1.5, dash: "dashed", axis: 1, opacity: op("ppv_mpu9250") },
-                { name: "ADXL355 PPV", data: Q("ppv"), color: col("ppv"), width: 2.2, axis: 1, z: 3, opacity: op("ppv") },
-              ]}
-            />
-            <div className="wx-chart-note">PPA/PPV are technical features from uploaded acceleration windows. No regulatory/compliance threshold or field-safety claim is applied.</div>
-          </div>
-        </Panel>
+        {(["ppa", "ppa_mpu9250"].some((q) => Q(q).length > 0)) && (
+          <Panel title="Peak Particle Acceleration (PPA)" sub="event features · UNVALIDATED · sparse samples">
+            <div className="panel-body">
+              <Legend items={[{label:"ADXL355 PPA · g", color:col("ppa")}, {label:"MPU9250 PPA · g", color:col("ppa_mpu9250"), dash:"dashed"}]} />
+              <PanelChart timeRange={chartRange} height={232} left={{name:"g", min:0, max:ppaMax}}
+                series={[
+                  {name:"ADXL355 PPA", data:Q("ppa"), color:col("ppa"), showSymbol:true, symbolSize:6, width:1.6, opacity:op("ppa")},
+                  {name:"MPU9250 PPA", data:Q("ppa_mpu9250"), color:col("ppa_mpu9250"), showSymbol:true, symbolSize:6, dash:"dashed", width:1.6, opacity:op("ppa_mpu9250")},
+                ]} />
+              <div className="wx-chart-note">Discrete blast events; no claim of continuous monitoring or safety compliance.</div>
+            </div>
+          </Panel>
+        )}
+        {(["ppv", "ppv_mpu9250"].some((q) => Q(q).length > 0)) && (
+          <Panel title="Peak Particle Velocity (PPV)" sub="event features · UNVALIDATED · sparse samples">
+            <div className="panel-body">
+              <Legend items={[{label:"ADXL355 PPV · mm/s", color:col("ppv")}, {label:"MPU9250 PPV · mm/s", color:col("ppv_mpu9250"), dash:"dashed"}]} />
+              <PanelChart timeRange={chartRange} height={232} left={{name:"mm/s", min:0, max:ppvMax}}
+                series={[
+                  {name:"ADXL355 PPV", data:Q("ppv"), color:col("ppv"), showSymbol:true, symbolSize:6, width:1.6, opacity:op("ppv")},
+                  {name:"MPU9250 PPV", data:Q("ppv_mpu9250"), color:col("ppv_mpu9250"), showSymbol:true, symbolSize:6, dash:"dashed", width:1.6, opacity:op("ppv_mpu9250")},
+                ]} />
+            </div>
+          </Panel>
+        )}
+        {(["accel_sample_rate", "accel_window_duration"].some((q) => Q(q).length > 0)) && (
+          <Panel title="Accelerometer Acquisition Metadata" sub="technical · sample rate and recording-window duration">
+            <div className="panel-body">
+              <Legend items={[{label:"Sample rate · Hz", color:col("accel_sample_rate")}, {label:"Window duration · s", color:col("accel_window_duration")}]} />
+              <PanelChart timeRange={chartRange} height={232} left={{name:"Hz", min:0}} right={{name:"s", min:0}}
+                series={[
+                  {name:"Sample rate", data:Q("accel_sample_rate"), color:col("accel_sample_rate"), showSymbol:true, symbolSize:6},
+                  {name:"Window duration", data:Q("accel_window_duration"), color:col("accel_window_duration"), showSymbol:true, symbolSize:6, axis:1},
+                ]} />
+              <div className="wx-chart-note">Acquisition metadata, not slope movement or displacement.</div>
+            </div>
+          </Panel>
         )}
 
         {!operationalReady ? null : est ? (

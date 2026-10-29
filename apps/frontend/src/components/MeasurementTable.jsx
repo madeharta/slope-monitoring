@@ -22,8 +22,12 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [loadedRange, setLoadedRange] = useState(null);
 
   useEffect(() => { setOffset(0); }, [deviceId, quantity, sourceKind, validationStatus, sortBy, sortDir, fromTime, toTime, siteId]);
+
+  const requestedRange = `${siteId}|${fromTime || ""}|${toTime || ""}`;
+  const rangeIsCurrent = loadedRange === requestedRange;
 
   useEffect(() => {
     let alive = true;
@@ -37,20 +41,29 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
     params.set("sort_by", sortBy);
     params.set("sort_dir", sortDir);
 
-    if (data.rows.length === 0) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+    setLoading(true);
+    setRefreshing(false);
     setError("");
     authFetch(`/api/v1/measurements?${params}`)
       .then(async (r) => {
         const body = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(body?.error?.message || `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(body?.error?.message || body?.detail || `HTTP ${r.status}`);
+        if (!Array.isArray(body?.rows)) {
+          throw new Error("Unexpected measurements API response: expected rows array. Check /api/v1/measurements contract.");
+        }
         return body;
       })
-      .then((body) => { if (alive) setData({ rows: body.rows || [], total: body.total || 0 }); })
-      .catch((e) => { if (alive) setError(e.message || "Failed to load data"); })
+      .then((body) => {
+        if (!alive) return;
+        setData({ rows: body.rows, total: Number(body.total ?? body.rows.length) });
+        setLoadedRange(requestedRange);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setData({ rows: [], total: 0 });
+        setLoadedRange(requestedRange);
+        setError(e.message || "Failed to load data");
+      })
       .finally(() => {
         if (alive) {
           setLoading(false);
@@ -86,6 +99,9 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
           memperbarui…
         </span>
       </div>
+      <div style={{padding:"8px 16px", fontSize:12, color:"var(--ink-2)"}} aria-live="polite">
+        Measurement timestamps (UTC) · {fromTime ? new Date(fromTime).toLocaleString("en-GB", {timeZone:"Asia/Jakarta"}) + " WIB" : "unbounded"} – {toTime ? new Date(toTime).toLocaleString("en-GB", {timeZone:"Asia/Jakarta"}) + " WIB" : "unbounded"}
+      </div>
       <div className="mt-toolbar">
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
           <option value="">All devices</option>
@@ -108,7 +124,7 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
         <datalist id="measurement-quantities">{quantities.map((q) => <option key={q} value={q} />)}</datalist>
         <button onClick={() => { setDeviceId(""); setSourceKind(""); setValidationStatus(""); setQuantity(""); setOffset(0); }}>Reset</button>
       </div>
-      {error && <div className="mt-error">{error}</div>}
+      {error && <div className="mt-error" role="alert">{error}</div>}
       <div className="mt-scroll">
         <table className="measurement-table">
           <thead><tr>
@@ -125,17 +141,17 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
             </th>
           </tr></thead>
           <tbody>
-            {loading && data.rows.length === 0 && (
+            {(loading || !rangeIsCurrent) && (
               <tr>
                 <td colSpan="11">Loading…</td>
               </tr>
             )}
-            {!loading && !data.rows.length && (
+            {!loading && rangeIsCurrent && !error && !data.rows.length && (
               <tr>
                 <td colSpan="11">No measurements match the selected filters.</td>
               </tr>
             )}
-            {data.rows.map((r, i) => (
+            {!loading && rangeIsCurrent && !error && data.rows.map((r, i) => (
               <tr key={`${r.time}-${r.device_id}-${r.quantity}-${i}`}>
                 <td className="num">{r.time}</td>
                 <td>{r.source_kind === "external" ? "—" : r.device_id}</td>
@@ -162,8 +178,8 @@ export default function MeasurementTable({ siteId, devices = [], fromTime = null
         </table>
       </div>
       <div className="mt-pager">
-        <button disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Previous</button>
-        <button disabled={offset + PAGE_SIZE >= data.total || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>Berikutnya →</button>
+        <button disabled={offset === 0 || loading || !rangeIsCurrent} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Previous</button>
+        <button disabled={offset + PAGE_SIZE >= data.total || loading || !rangeIsCurrent} onClick={() => setOffset(offset + PAGE_SIZE)}>Berikutnya →</button>
       </div>
     </section>
   );
