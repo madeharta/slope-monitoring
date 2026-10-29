@@ -15,6 +15,12 @@ const HOURS = [["6h", 6], ["24h", 24], ["3d", 72], ["7d", 168]];
 const VEL_TH = { dir: "high", siaga: 5, bahaya: 10 };
 const DAY = 86_400_000;
 
+// datetime-local fields use the browser's local timezone (not UTC strings).
+function toDatetimeLocal(date) {
+  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return adjusted.toISOString().slice(0, 16);
+}
+
 const fmt = (v, d = 2) => (v == null ? "—" : Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(d));
 
 function statusFor(th, v) {
@@ -363,8 +369,10 @@ export default function SlopeDetail() {
   const name = overview?.slopes.find((s) => s.site_id === id)?.name || id;
   const site = overview?.slopes.find((s) => s.site_id === id);
   const live = useMemo(
-    () => (recent[id] || []).filter((e) => new Date(e.t) > new Date(Date.now() - hours * 3_600_000)),
-    [recent, id, hours],
+    () => (customFrom && customTo ? [] : (recent[id] || []).filter(
+      (e) => new Date(e.t) > new Date(Date.now() - hours * 3_600_000),
+    )),
+    [recent, id, hours, customFrom, customTo],
   );
 
   // merge historical series + live tail into one point-array per quantity
@@ -420,6 +428,18 @@ export default function SlopeDetail() {
   const STATUS = pal.marker;      // concrete status colours for the canvas charts
   const BAND = pal.band;          // rgba band fills
   const col = (q) => pal.line[q] || pal.lineDefault;
+
+  const latestHistoricalMs = Date.parse(data?.latest_stale_reading?.time || "");
+  const canViewHistorical = Number.isFinite(latestHistoricalMs) && latestHistoricalMs <= Date.now();
+  const viewLatestAvailable = () => {
+    if (!canViewHistorical) return;
+    // Include earlier measurements as well as the most recent one; do not
+    // reinterpret upload/received_at timestamps as sensor measurement times.
+    const from = new Date(latestHistoricalMs - 14 * DAY);
+    const to = new Date(Math.min(Date.now(), latestHistoricalMs + 60 * 60_000));
+    setCustomFrom(toDatetimeLocal(from));
+    setCustomTo(toDatetimeLocal(to));
+  };
 
   // device-isolate opacity: dim series not in the selected group
   const op = (q) => (device === null || GROUP_OF[q] === device ? 1 : 0.14);
@@ -501,6 +521,13 @@ export default function SlopeDetail() {
               <div style={{ marginTop: 6 }}>
                 Last recorded measurement: {new Date(data.latest_stale_reading.time).toLocaleString("en-GB", { timeZone: "Asia/Jakarta" })} WIB.
                 Historical data may be available through a custom date range.
+                {canViewHistorical && (
+                  <div style={{ marginTop: 10 }}>
+                    <button type="button" onClick={viewLatestAvailable}>
+                      View Latest Available Data (14-day window)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
