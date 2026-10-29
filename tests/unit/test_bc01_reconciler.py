@@ -22,8 +22,8 @@ class Conn:
         self.restarted = False
     def transaction(self): return Tx(self)
     async def fetch(self, query, *args):
-        if 'SELECT device_id FROM device_config' in query:
-            return [{'device_id': 'BASE-01'}] if self.trigger['config_value'] == 1 else []
+        if 'FROM device_config' in query and 'SELECT device_id' in query:
+            return [{'device_id': 'BASE-01', 'updated_at': self.trigger['updated_at']}] if self.trigger['config_value'] == 1 else []
         raise AssertionError(query)
     async def fetchrow(self, query, *args):
         if 'FROM device_config' in query and "config_key='TriggerStart'" in query.replace(" ", ""): return self.trigger.copy()
@@ -89,3 +89,27 @@ async def test_audit_failure_rolls_back_reset():
 @pytest.mark.asyncio
 async def test_bad_limit_fails_before_db():
     with pytest.raises(ValueError): await reconcile_once(None, limit=0)
+
+@pytest.mark.asyncio
+async def test_keyset_scans_past_full_unexpired_batch():
+    class PagingConn(Conn):
+        def __init__(self):
+            super().__init__(T + timedelta(seconds=61), value=0)
+            self.calls = 0
+        async def fetch(self, query, *args):
+            self.calls += 1
+            if self.calls == 1:
+                return [{'device_id': 'BASE-A', 'updated_at': T},
+                        {'device_id': 'BASE-B', 'updated_at': T}]
+            if self.calls == 2:
+                assert 'AND (updated_at, device_id) > ($2, $3)' in query
+                assert args == (2, T, 'BASE-B')
+                return [{'device_id': 'BASE-C', 'updated_at': T}]
+            raise AssertionError('unexpected extra query')
+        async def fetchrow(self, query, *args):
+            if 'FROM device_config' in query and "config_key='TriggerStart'" in query.replace(' ', ''):
+                return {'config_value': 0, 'updated_at': T}
+            raise AssertionError(query)
+    conn = PagingConn()
+    assert await reconcile_once(Pool(conn), limit=2) == 0
+    assert conn.calls == 2
