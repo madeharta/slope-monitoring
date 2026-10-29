@@ -250,7 +250,8 @@ export default function BlastControl() {
         </span>
       </div>
 
-      <section className="panel blast-card">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 560px), 1fr))", gap: 20, alignItems: "stretch" }}>
+      <section className="panel blast-card" style={{ minWidth: 0 }}>
         <div className="blast-section-head">
           <div>
             <h2>Blast command</h2>
@@ -386,46 +387,38 @@ export default function BlastControl() {
         )}
       </section>
 
-      <section aria-label="TriggerStart delivery and ACK">
-        <h2 style={{ marginBottom: 16 }}>TriggerStart · Konfirmasi perangkat</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 16 }}>
-          <div className="panel blast-card">
-            <h3>Server TriggerStart</h3>
-            <div className="blast-config-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
-              <div><span>Status server</span><strong>
-                {triggerStatus?.server?.trigger_start == null ? "—" :
-                  `${triggerStatus.server.trigger_start} · ${triggerStatus.server.trigger_start === 0 ? "RESET" : "START"}`}
-              </strong><small>{triggerStatus?.server?.reset_reason === "AUTO_TIMEOUT" ? "RESET otomatis karena timeout" : "Status konfigurasi server"}</small></div>
-            </div>
-          </div>
-          <div className="panel blast-card">
-            <h3>ACK Perangkat</h3>
-            <div className="blast-config-grid" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
-              <div><span>Konfirmasi perangkat</span><strong>
-                {triggerStatus?.delivery?.acked ? `ACK ${triggerStatus.delivery.trigger_start} diterima` :
-                  triggerStatus?.delivery?.pending ? "Menunggu ACK" : "Belum terkonfirmasi"}
-              </strong><small>{triggerStatus?.delivery?.ack_server_at ?
-                `Server menerima: ${new Date(triggerStatus.delivery.ack_server_at).toLocaleString()}` :
-                "Tidak ada ACK yang cocok untuk pending command terbaru"}</small></div>
-            </div>
-            {triggerStatus?.delivery?.ack_device_utc &&
-              <div className="blast-delivery-note">Waktu perangkat (UTC): <strong>{triggerStatus.delivery.ack_device_utc}</strong></div>}
-          </div>
+      <section className="panel blast-card" aria-label="TriggerStart delivery and ACK" style={{ minWidth: 0 }}>
+        <div className="blast-section-head"><div><h2>TriggerStart · Konfirmasi perangkat</h2></div></div>
+        <div className="blast-config-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 210px), 1fr))" }}>
+          <div><span>Server TriggerStart</span><strong>
+            {triggerStatus?.server?.trigger_start == null ? "—" :
+              `${triggerStatus.server.trigger_start} · ${triggerStatus.server.trigger_start === 0 ? "RESET" : "START"}`}
+          </strong><small>{triggerStatus?.server?.reset_reason === "AUTO_TIMEOUT" ? "RESET otomatis karena timeout" : "Status konfigurasi server"}</small></div>
+          <div><span>ACK perangkat</span><strong>
+            {triggerStatus?.delivery?.acked ? `ACK ${triggerStatus.delivery.trigger_start} diterima` :
+              triggerStatus?.delivery?.pending ? "Menunggu ACK" : "Belum terkonfirmasi"}
+          </strong><small>{triggerStatus?.delivery?.ack_server_at ?
+            `Server menerima: ${new Date(triggerStatus.delivery.ack_server_at).toLocaleString()}` :
+            "Tidak ada ACK yang cocok untuk pending command terbaru"}</small></div>
         </div>
+        {triggerStatus?.delivery?.ack_device_utc &&
+          <div className="blast-delivery-note">Waktu perangkat (UTC): <strong>{triggerStatus.delivery.ack_device_utc}</strong></div>}
         {triggerStatus?.error && <div className="admin-error" role="alert">Status ACK belum tersedia: {triggerStatus.error}</div>}
-        <div className="panel blast-card" style={{ marginTop: 24 }}>
-          <h3>Riwayat TriggerStart</h3>
-          {triggerStatus?.events?.length ? (
-            <div style={{ display: "grid", gap: 8 }}>
-              {triggerStatus.events.map((item, index) => (
-                <div className="blast-delivery-note" key={`${item.kind}-${item.occurred_at}-${index}`}>
-                  <strong>{item.kind === "DEVICE_ACK" ? `ACK perangkat · ${item.trigger_start}` : "RESET otomatis · timeout"}</strong>
-                  <span> · {new Date(item.occurred_at).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          ) : <p>Belum ada riwayat ACK atau timeout.</p>}
-        </div>
+      </section>
+      </div>
+
+      <section className="panel blast-card" aria-label="Riwayat TriggerStart" style={{ marginTop: 24 }}>
+        <h3>Riwayat TriggerStart</h3>
+        {triggerStatus?.events?.length ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            {triggerStatus.events.map((item, index) => (
+              <div className="blast-delivery-note" key={`${item.kind}-${item.occurred_at}-${index}`}>
+                <strong>{item.kind === "DEVICE_ACK" ? `ACK perangkat · ${item.trigger_start}` : "RESET otomatis · timeout"}</strong>
+                <span> · {new Date(item.occurred_at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p>Belum ada riwayat ACK atau timeout.</p>}
       </section>
 
       <details className="panel blast-flow">
