@@ -1,7 +1,8 @@
 from __future__ import annotations
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from services.device_config_service.blast_expiry import expired
 from typing import Any
 from common.errors import NotFoundError
 @dataclass(frozen=True)
@@ -133,6 +134,20 @@ class DeviceConfigRepository:
                 device["site_id"],
             )
             base_id = base["device_id"] if base is not None else device_id
+            requested_rows = await conn.fetch(
+                "SELECT config_key, config_value FROM device_config WHERE device_id = $1",
+                device_id,
+            )
+            base_rows = requested_rows if base_id == device_id else await conn.fetch(
+                "SELECT config_key, config_value FROM device_config WHERE device_id = $1",
+                base_id,
+            )
+            # BC-01: expiry-on-read uses the same transactional audit and reset logic
+            # as the independent reconciler, preventing two distinct expiry paths.
+            async with conn.transaction():
+                from services.device_config_service.blast_timeout_reconciler import expire_one_on_conn
+                await expire_one_on_conn(conn, base_id)
+            # Re-read after possible expiry; do not serve an obsolete trigger.
             requested_rows = await conn.fetch(
                 "SELECT config_key, config_value FROM device_config WHERE device_id = $1",
                 device_id,
