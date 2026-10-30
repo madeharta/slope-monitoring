@@ -2,8 +2,12 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 import asyncio
 
+import pytest
+
 from ml.pipeline.preprocessing.ppk_engine import PPKSolutionEpoch, PPKWindowResult
-from services.monitoring_service.ppk_solution_repository import PPKSolutionRepository
+from services.monitoring_service.ppk_solution_repository import (
+    PPKSolutionRepository, PPKSolutionConflictError, _PERSISTED_FIELDS,
+)
 
 
 class _Conn:
@@ -11,9 +15,17 @@ class _Conn:
         self.args = None
         self.query = None
 
-    async def execute(self, query, *args):
+    async def fetchrow(self, query, *args):
         self.query = query
         self.args = args
+        if "INSERT INTO ppk_solution_records" in query:
+            self.insert_attempts = getattr(self, "insert_attempts", 0) + 1
+            if not hasattr(self, "stored"):
+                self.stored = dict(zip(_PERSISTED_FIELDS, args))
+                self.stored.update(quality_gate_status="accepted", validation_status="unvalidated")
+                return {"rover_device_id": args[3]}
+            return None
+        return getattr(self, "stored", None)
 
 
 class _Ctx:
@@ -71,3 +83,54 @@ def test_write_accepted_persists_schema_quality_and_reproducibility_provenance()
         "normalized_navigation_sha256", "convbin_sha256", "rnx2rtkp_sha256", "solution_pos_sha256",
     ):
         assert column in pool.conn.query
+
+
+def test_write_accepted_identical_retry_is_idempotent_and_conflict_is_rejected():
+    pool = _Pool()
+    repo = PPKSolutionRepository(pool)
+    solution = PPKSolutionEpoch(
+        timestamp_utc=datetime(2026, 9, 26, 12, tzinfo=timezone.utc),
+        latitude=-6.2, longitude=106.8, ellipsoidal_height_m=500.0,
+        rtklib_quality=1, satellites=12, sdn_m=0.002, sde_m=0.003,
+        sdu_m=0.004, age_s=0.5, ratio=12.0,
+    )
+    hashes = dict(
+        base_rawx_sha256="c" * 64, rover_rawx_sha256="d" * 64,
+        base_obs_sha256="e" * 64, rover_obs_sha256="f" * 64,
+        normalized_navigation_sha256="1" * 64, convbin_sha256="2" * 64,
+        rnx2rtkp_sha256="3" * 64, solution_pos_sha256="4" * 64,
+    )
+    result = PPKWindowResult(
+        solutions=(solution,), navigation_sha256="a" * 64,
+        navigation_source_url=None, navigation_provider=None,
+        navigation_cache_hit=True, rtklib_config_sha256="b" * 64,
+        **hashes,
+    )
+    disp = SimpleNamespace(de_mm=1.0, dn_mm=2.0, du_mm=3.0, total_mm=3.74)
+    kwargs = dict(site_id="SITE-A", base_device_id="BASE-01",
+                  rover_device_id="ROVER-B1-01", solution=solution,
+                  result=result, displacement=disp)
+    asyncio.run(repo.write_accepted(**kwargs))
+    saved = pool.conn.stored.copy()
+    asyncio.run(repo.write_accepted(**kwargs))
+    assert pool.conn.insert_attempts == 2
+    assert pool.conn.stored == saved
+
+    changed_disp = SimpleNamespace(de_mm=9.0, dn_mm=2.0, du_mm=3.0, total_mm=3.74)
+    with pytest.raises(PPKSolutionConflictError):
+        asyncio.run(repo.write_accepted(**{**kwargs, "displacement": changed_disp}))
+    assert pool.conn.stored == saved
+
+    changed_result = PPKWindowResult(
+        solutions=(solution,), navigation_sha256="9" * 64,
+        navigation_source_url=None, navigation_provider=None,
+        navigation_cache_hit=True, rtklib_config_sha256="b" * 64,
+        **hashes,
+    )
+    with pytest.raises(PPKSolutionConflictError):
+        asyncio.run(repo.write_accepted(**{**kwargs, "result": changed_result}))
+    assert pool.conn.stored == saved
+
+    pool.conn.stored["validation_status"] = "validated"
+    with pytest.raises(PPKSolutionConflictError):
+        asyncio.run(repo.write_accepted(**kwargs))

@@ -6,6 +6,26 @@ from ml.pipeline.preprocessing.ppk_engine import PPK_OUTPUT_SCHEMA_VERSION, PPKS
 PPK_VERTICAL_DATUM = "ELLIPSOIDAL_WGS84"
 
 
+class PPKSolutionConflictError(RuntimeError):
+    """An existing PPK epoch differs from the attempted write."""
+
+
+# The order matches INSERT's 35 bind arguments (status fields are SQL constants).
+_PERSISTED_FIELDS = (
+    "time", "site_id", "base_device_id", "rover_device_id", "schema_version",
+    "latitude", "longitude", "ellipsoidal_height_m",
+    "displacement_e_mm", "displacement_n_mm", "displacement_u_mm", "displacement_total_mm",
+    "h_acc_m", "rtklib_quality", "rtklib_ns", "rtklib_age_s", "rtklib_ratio",
+    "rtklib_sdn_m", "rtklib_sde_m", "rtklib_sdu_m",
+    "navigation_sha256", "navigation_source_url", "navigation_provider",
+    "navigation_cache_hit", "rtklib_config_sha256",
+    "vertical_datum", "processing_engine", "base_rawx_sha256", "rover_rawx_sha256",
+    "base_obs_sha256", "rover_obs_sha256", "normalized_navigation_sha256",
+    "convbin_sha256", "rnx2rtkp_sha256", "solution_pos_sha256",
+)
+
+
+
 def is_complete_provenance(row) -> bool:
     required = (
         "base_rawx_sha256",
@@ -36,7 +56,7 @@ class PPKSolutionRepository:
         displacement,
     ) -> None:
         async with self._pool.acquire() as conn:
-            await conn.execute(
+            inserted = await conn.fetchrow(
                 """
                 INSERT INTO ppk_solution_records (
                     time, site_id, base_device_id, rover_device_id, schema_version,
@@ -65,42 +85,8 @@ class PPKSolutionRepository:
                     $32, $33, $34, $35,
                     'accepted', 'unvalidated'
                 )
-                ON CONFLICT (rover_device_id, time, schema_version) DO UPDATE SET
-                    site_id = EXCLUDED.site_id,
-                    base_device_id = EXCLUDED.base_device_id,
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    ellipsoidal_height_m = EXCLUDED.ellipsoidal_height_m,
-                    displacement_e_mm = EXCLUDED.displacement_e_mm,
-                    displacement_n_mm = EXCLUDED.displacement_n_mm,
-                    displacement_u_mm = EXCLUDED.displacement_u_mm,
-                    displacement_total_mm = EXCLUDED.displacement_total_mm,
-                    h_acc_m = EXCLUDED.h_acc_m,
-                    rtklib_quality = EXCLUDED.rtklib_quality,
-                    rtklib_ns = EXCLUDED.rtklib_ns,
-                    rtklib_age_s = EXCLUDED.rtklib_age_s,
-                    rtklib_ratio = EXCLUDED.rtklib_ratio,
-                    rtklib_sdn_m = EXCLUDED.rtklib_sdn_m,
-                    rtklib_sde_m = EXCLUDED.rtklib_sde_m,
-                    rtklib_sdu_m = EXCLUDED.rtklib_sdu_m,
-                    navigation_sha256 = EXCLUDED.navigation_sha256,
-                    navigation_source_url = EXCLUDED.navigation_source_url,
-                    navigation_provider = EXCLUDED.navigation_provider,
-                    navigation_cache_hit = EXCLUDED.navigation_cache_hit,
-                    rtklib_config_sha256 = EXCLUDED.rtklib_config_sha256,
-                    vertical_datum = EXCLUDED.vertical_datum,
-                    processing_engine = EXCLUDED.processing_engine,
-                    base_rawx_sha256 = EXCLUDED.base_rawx_sha256,
-                    rover_rawx_sha256 = EXCLUDED.rover_rawx_sha256,
-                    base_obs_sha256 = EXCLUDED.base_obs_sha256,
-                    rover_obs_sha256 = EXCLUDED.rover_obs_sha256,
-                    normalized_navigation_sha256 = EXCLUDED.normalized_navigation_sha256,
-                    convbin_sha256 = EXCLUDED.convbin_sha256,
-                    rnx2rtkp_sha256 = EXCLUDED.rnx2rtkp_sha256,
-                    solution_pos_sha256 = EXCLUDED.solution_pos_sha256,
-                    quality_gate_status = 'accepted',
-                    validation_status = 'unvalidated',
-                    processed_at = now()
+                ON CONFLICT (rover_device_id, time, schema_version) DO NOTHING
+                RETURNING rover_device_id
                 """,
                 solution.timestamp_utc,
                 site_id,
@@ -138,6 +124,44 @@ class PPKSolutionRepository:
                 result.rnx2rtkp_sha256,
                 result.solution_pos_sha256,
             )
+            if inserted is not None:
+                return
+
+            # A conflicting insert has committed (or become visible after a
+            # concurrent inserter). Compare every persisted field, including
+            # provenance and QA status; never silently accept a different run.
+            existing = await conn.fetchrow(
+                "SELECT " + ", ".join(_PERSISTED_FIELDS) +
+                ", quality_gate_status, validation_status "
+                "FROM ppk_solution_records "
+                "WHERE rover_device_id=$1 AND time=$2 AND schema_version=$3",
+                rover_device_id, solution.timestamp_utc, PPK_OUTPUT_SCHEMA_VERSION,
+            )
+            if existing is None:
+                raise PPKSolutionConflictError("PPK epoch conflict without readable existing row")
+
+            attempted = (
+                solution.timestamp_utc, site_id, base_device_id, rover_device_id,
+                PPK_OUTPUT_SCHEMA_VERSION, solution.latitude, solution.longitude,
+                solution.ellipsoidal_height_m, displacement.de_mm, displacement.dn_mm,
+                displacement.du_mm, displacement.total_mm, solution.h_acc_m,
+                solution.rtklib_quality, solution.satellites, solution.age_s,
+                solution.ratio, solution.sdn_m, solution.sde_m, solution.sdu_m,
+                result.navigation_sha256, result.navigation_source_url,
+                result.navigation_provider, result.navigation_cache_hit,
+                result.rtklib_config_sha256, PPK_VERTICAL_DATUM, result.engine_name,
+                result.base_rawx_sha256, result.rover_rawx_sha256,
+                result.base_obs_sha256, result.rover_obs_sha256,
+                result.normalized_navigation_sha256, result.convbin_sha256,
+                result.rnx2rtkp_sha256, result.solution_pos_sha256,
+            )
+            if any(existing[field] != value for field, value in zip(_PERSISTED_FIELDS, attempted)) or (
+                existing["quality_gate_status"] != "accepted"
+                or existing["validation_status"] != "unvalidated"
+            ):
+                raise PPKSolutionConflictError(
+                    "PPK epoch already exists with different values or provenance"
+                )
 
     async def list_records(
         self,
