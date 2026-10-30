@@ -88,6 +88,19 @@ class FakeConnection:
         return selected[:limit]
 
 
+class FakeAccountConnection:
+    async def fetchrow(self, query, user_id):
+        assert "FROM public.users" in query
+        assert user_id == 1001
+        return {"disabled_at": None, "role": "viewer"}
+
+
+class FakeAccountPool:
+    @asynccontextmanager
+    async def acquire(self):
+        yield FakeAccountConnection()
+
+
 class FakePool:
     def __init__(self, rows):
         self.connection = FakeConnection(rows)
@@ -97,10 +110,12 @@ class FakePool:
         yield self.connection
 
 
-def test_qa_api_contract_240_epochs():
+def test_qa_api_contract_240_epochs(monkeypatch):
+    monkeypatch.setenv("PPK_QA_SITE_ACCESS_JSON", '{"ITB-STAGING-01": ["1001"]}')
     app = FastAPI()
     app.include_router(router)
     app.state.ppk_qa_db_pool = FakePool(fixture_rows())
+    app.state.db_pool = FakeAccountPool()
 
     token = create_access_token(
         TokenPayload(

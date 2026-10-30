@@ -61,6 +61,14 @@ def test_invalid_rejected(field,value):
     with pytest.raises(ValueError):adapt_ppk_solution(r,**ARGS)
 
 
+def test_signed_rtklib_differential_age_is_preserved_as_valid():
+    r = row()
+    r["rtklib_age_s"] = -35.99
+    candidate = adapt_ppk_solution(r, **ARGS)
+    assert candidate.structurally_valid
+    assert not candidate.supervised_target_eligible
+
+
 def test_required_field_missing():
     r=row();del r['processed_at']
     with pytest.raises(ValueError,match="missing PPK columns"):

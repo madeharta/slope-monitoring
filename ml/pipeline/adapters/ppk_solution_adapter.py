@@ -129,7 +129,8 @@ def adapt_ppk_solution(record: Mapping[str, object], *, site_id: str,
         raise ValueError("invalid PPK coordinate range")
     for f in OPTIONAL_FLOAT_FIELDS:
         if f in record and record[f] is not None:
-            _finite(record[f], f, nonnegative=f == "rtklib_age_s")
+            # RTKLIB differential age is signed; retain valid negative values.
+            _finite(record[f], f)
     q, ns = record["rtklib_quality"], record["rtklib_ns"]
     if isinstance(q, bool) or not isinstance(q, int) or not 1 <= q <= 6:
         raise ValueError("invalid RTKLIB quality")
