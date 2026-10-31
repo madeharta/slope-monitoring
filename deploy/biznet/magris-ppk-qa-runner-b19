@@ -80,13 +80,13 @@ def mounts():
         "--entrypoint", "python",
     ]
 
-# Backlog cursor cycles through historical 7-day slices. Never scans more than
-# 30 days in one DB request, and never blocks future retries of WAITING_NAV.
+# The preserved historical state is not scanned under the recent-only policy.
 STATE = CACHE / "b19_backlog_state.json"
-START = dt.datetime(2026, 10, 8, 0, tzinfo=dt.timezone.utc)
+START = dt.datetime(2026, 10, 30, 0, tzinfo=dt.timezone.utc)
+# Explicit policy: recent QA only; older windows retained in state/database, never executed.
 ROVERS = {"ROVER-B1-01", "ROVER-B1-02"}
 MAX_JOBS = 3
-RECENT_JOBS = 2  # Reserve at least one slot for historical backlog.
+RECENT_JOBS = 2  # Max ready/recent QA jobs per cycle.
 NAV_RETRY_INTERVAL = dt.timedelta(minutes=15)
 RECENT_LOOKBACK_HOURS = 24
 
@@ -260,6 +260,8 @@ def due_nav_jobs(state, now):
         if entry.get("ready", False):
             continue  # Ready windows belong to the hourly QA processor.
         since = utc_hour(entry["since"])
+        if since < START:
+            continue
         if dt.datetime.fromisoformat(entry["retry_at"]) <= now:
             eligible.append({"rover": entry["rover"],
                              "since": entry["since"],
@@ -274,6 +276,8 @@ def ready_nav_jobs(state):
         if not entry.get("ready", False):
             continue
         since = utc_hour(entry["since"])
+        if since < START:
+            continue
         eligible.append({"rover": entry["rover"], "since": entry["since"],
                          "until": (since + dt.timedelta(hours=1)).isoformat()})
     return sorted(eligible, key=lambda item: (item["since"], item["rover"]), reverse=True)[:MAX_JOBS]
@@ -452,7 +456,7 @@ def main(nav_retry_only=False):
             raise RuntimeError("NAV retry partial failure")
         return
     # Recent-first: inspect a bounded 24-hour horizon of closed UTC hours.
-    # Historical discovery still gets at least one slot per run. No cursor reset.
+    # Historical discovery is disabled; state cursor remains unchanged.
     cutoff = (now - dt.timedelta(minutes=20)).replace(
         minute=0, second=0, microsecond=0)
     recent_bounds = (max(START, cutoff - dt.timedelta(hours=RECENT_LOOKBACK_HOURS)), cutoff)
@@ -511,21 +515,9 @@ def main(nav_retry_only=False):
         for job in recent_jobs:
             process_one(job, "QA_RECENT_WINDOW")
 
-    historical_budget = MAX_JOBS - summary["selected"]
-    bounds = discovery_bounds(state, now)
-    if historical_budget and bounds is not None:
-        try:
-            jobs = run_scheduler(None, discovery=True, bounds=bounds,
-                                 state=state, limit=historical_budget)
-        except Exception as exc:
-            diagnostic("BACKLOG_DISCOVERY", exc)
-            jobs = []
-            summary["failed"] += 1
-        else:
-            for job in jobs:
-                process_one(job, "QA_WINDOW")
-            state["cursor"] = (START if bounds[1] >= cutoff else bounds[1]).isoformat()
-            write_state(state)
+    # Recent-only policy: no historical discovery/cursor advancement.
+    # Historical NAV and cooldown records are deliberately left intact for audit.
+    print("HISTORICAL_DISCOVERY: DISABLED_RECENT_ONLY", flush=True)
     print("SCHEDULER_SUMMARY:", json.dumps(summary), flush=True)
     if summary["failed"]:
         raise RuntimeError("one or more QA windows failed; see QA_STAGE_FAILED")
