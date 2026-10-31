@@ -5,6 +5,12 @@ from unittest.mock import patch
 import pytest
 from apps.api.routers.v1 import ppk
 
+@pytest.fixture(autouse=True)
+def qa_site_policy(monkeypatch):
+    # Test-only site allowlist. Production remains fail-closed.
+    monkeypatch.setenv('PPK_QA_SITE_ACCESS_JSON', '{"ITB-STAGING-01":["1001"]}')
+
+
 class DBError(Exception):
     def __init__(self, state):
         self.sqlstate = state

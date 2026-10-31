@@ -80,7 +80,7 @@ class Window:
 
 
 def select_windows(candidates, jobs, solutions, cooldowns=None, now=None, limit=3,
-                   max_failed_attempts=3):
+                   max_failed_attempts=3, newest_first=False):
     """Pure, deterministic selection. Cooldown keys: 'ROVER|YYYY-MM-DDTHH:MM:SS+00:00'."""
     if not 1 <= limit <= 3:
         raise ValueError('max 3 rover-window combinations per run')
@@ -111,7 +111,7 @@ def select_windows(candidates, jobs, solutions, cooldowns=None, now=None, limit=
                 # to retry aggressively.
                 continue
         eligible.append(item)
-    eligible.sort(key=lambda row: (row.start, row.rover))
+    eligible.sort(key=lambda row: (row.start, row.rover), reverse=newest_first)
     return eligible[:limit]
 
 
@@ -166,7 +166,8 @@ async def discover(args):
         if not isinstance(cooldowns, dict):
             raise ValueError('invalid cooldown document')
     result = select_windows(candidates, jobs, {(r['rover'], r['window_utc']) for r in solutions},
-                            cooldowns, limit=args.limit)
+                            cooldowns, limit=args.limit,
+                            newest_first=args.newest_first)
     return [{'rover': r.rover, 'since': r.start.isoformat(),
              'until': (r.start + dt.timedelta(hours=1)).isoformat(),
              'matched': r.matched} for r in result]
@@ -180,6 +181,8 @@ def main():
     parser.add_argument('--until', required=True)
     parser.add_argument('--limit', type=int, default=3, choices=(1, 2, 3))
     parser.add_argument('--cooldowns', help='optional read-only JSON cooldown map')
+    parser.add_argument('--newest-first', action='store_true',
+                        help='select latest eligible windows (recent lane only)')
     args = parser.parse_args()
     print(json.dumps({'selected': asyncio.run(discover(args))}))
 

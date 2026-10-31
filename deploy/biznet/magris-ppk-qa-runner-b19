@@ -29,6 +29,12 @@ def diagnostic(stage, exc, job=None):
         record["exit_code"] = exc.exit_code
     if isinstance(exc, subprocess.TimeoutExpired):
         record["timeout_s"] = exc.timeout
+    # Only fixed, code-owned error phrases are safe to disclose.
+    allowed = {"unexpected scheduler coverage", "scheduler returned unexpected result",
+               "scheduler container failed", "unexpected scheduler failure",
+               "backlog discovery failed", "unexpected NAV status"}
+    if isinstance(exc, RuntimeError) and str(exc) in allowed:
+        record["reason_code"] = str(exc).upper().replace(" ", "_")
     if job is not None:
         record.update({"rover": job.get("rover"), "window": job.get("since")})
     print("QA_STAGE_FAILED:", json.dumps(record), flush=True)
@@ -80,7 +86,9 @@ STATE = CACHE / "b19_backlog_state.json"
 START = dt.datetime(2026, 10, 8, 0, tzinfo=dt.timezone.utc)
 ROVERS = {"ROVER-B1-01", "ROVER-B1-02"}
 MAX_JOBS = 3
+RECENT_JOBS = 2  # Reserve at least one slot for historical backlog.
 NAV_RETRY_INTERVAL = dt.timedelta(minutes=15)
+RECENT_LOOKBACK_HOURS = 24
 
 
 def utc_hour(value):
@@ -167,6 +175,43 @@ def load_jobs(output):
     return jobs
 
 
+def parse_nav_output(output):
+    """Extract a single terminal NAV status; preserve validated provenance."""
+    statuses = []
+    sources = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("NAV_SOURCE:"):
+            try:
+                source = json.loads(line.split(":", 1)[1].strip())
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError("invalid NAV_SOURCE metadata") from exc
+            if not isinstance(source, dict) or not all(
+                isinstance(source.get(k), str) and source[k]
+                for k in ("product", "source_url", "sha256")
+            ):
+                raise RuntimeError("invalid NAV_SOURCE fields")
+            sources.append(source)
+        elif line == "NAV_WAITING" or line.startswith("NAV_READY "):
+            statuses.append(line)
+        else:
+            raise RuntimeError("unexpected NAV stdout record")
+    if len(statuses) != 1 or len(sources) > 1:
+        raise RuntimeError("invalid NAV stdout coverage")
+    status = statuses[0]
+    if status.startswith("NAV_READY "):
+        fields = status.split()
+        if len(fields) != 3 or not fields[1].isdigit() or len(fields[2]) != 16:
+            raise RuntimeError("invalid NAV_READY status")
+    elif sources:
+        raise RuntimeError("NAV_SOURCE without NAV_READY")
+    for source in sources:
+        print("NAV_SOURCE:", json.dumps(source, sort_keys=True), flush=True)
+    return status
+
+
 def prepare_nav(job):
     # NAV downloads occur only for selected historical windows; no manual files.
     code = """
@@ -184,8 +229,9 @@ except (RuntimeError, ValueError, FileNotFoundError) as exc:
         raise
     print('NAV_WAITING')
 """
-    return docker(["run", "--rm", "--network", "bridge", *mounts(),
-                   IMAGE, "-c", code, job["since"]], timeout=180).strip()
+    output = docker(["run", "--rm", "--network", "bridge", *mounts(),
+                     IMAGE, "-c", code, job["since"]], timeout=180)
+    return parse_nav_output(output)
 
 
 def record_cooldown(state, job, result, now):
@@ -208,7 +254,7 @@ def record_cooldown(state, job, result, now):
     }
 
 def due_nav_jobs(state, now):
-    """Oldest queued NAV windows first; no discovery or DB access here."""
+    """Newest due NAV windows first; no discovery or DB access here."""
     eligible = []
     for entry in state.get("nav_pending", {}).values():
         if entry.get("ready", False):
@@ -218,11 +264,11 @@ def due_nav_jobs(state, now):
             eligible.append({"rover": entry["rover"],
                              "since": entry["since"],
                              "until": (since + dt.timedelta(hours=1)).isoformat()})
-    return sorted(eligible, key=lambda item: (item["since"], item["rover"]))[:MAX_JOBS]
+    return sorted(eligible, key=lambda item: (item["since"], item["rover"]), reverse=True)[:MAX_JOBS]
 
 
 def ready_nav_jobs(state):
-    """Validated NAV windows awaiting QA processing (oldest first)."""
+    """Validated NAV windows awaiting QA processing (newest first)."""
     eligible = []
     for entry in state.get("nav_pending", {}).values():
         if not entry.get("ready", False):
@@ -230,7 +276,7 @@ def ready_nav_jobs(state):
         since = utc_hour(entry["since"])
         eligible.append({"rover": entry["rover"], "since": entry["since"],
                          "until": (since + dt.timedelta(hours=1)).isoformat()})
-    return sorted(eligible, key=lambda item: (item["since"], item["rover"]))[:MAX_JOBS]
+    return sorted(eligible, key=lambda item: (item["since"], item["rover"]), reverse=True)[:MAX_JOBS]
 
 
 def retry_nav_only(job, state, now):
@@ -269,7 +315,7 @@ def handle_job(job, state, now):
     return outcome
 
 
-def run_scheduler(job, discovery=False, bounds=None, state=None):
+def run_scheduler(job, discovery=False, bounds=None, state=None, limit=MAX_JOBS, newest_first=False):
     with tempfile.TemporaryDirectory(
         prefix="magris-qa-", dir="/run"
     ) as tmp:
@@ -322,7 +368,9 @@ def run_scheduler(job, discovery=False, bounds=None, state=None):
                    "--mount", f"type=bind,src={cooldown_file},dst=/run/cooldowns.json,readonly",
                    *mounts(), IMAGE, "scripts/ppk_qa_backlog.py",
                    "--since", bounds[0].isoformat(), "--until", bounds[1].isoformat(),
-                   "--limit", str(MAX_JOBS), "--cooldowns", "/run/cooldowns.json"]
+                   "--limit", str(limit), "--cooldowns", "/run/cooldowns.json"]
+            if newest_first:
+                cmd.append("--newest-first")
             completed = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             if completed.returncode:
                 raise RuntimeError("backlog discovery failed")
@@ -348,6 +396,22 @@ def run_scheduler(job, discovery=False, bounds=None, state=None):
         record = records[0]
         outcome = record.get("result")
         if outcome not in {"WAITING_NAV", "WAITING_INPUT", "PROCESSED_OR_IDEMPOTENT"}:
+            # Worker stdout/stderr can contain sensitive connection details.
+            # Emit ONLY fixed allowlisted status tokens and numeric exit codes.
+            allowed_statuses = {"FAILED", "COMPLETED", "RUNNING", "WAITING_PAIR",
+                                "INSUFFICIENT_OVERLAP", "WAITING_NAV",
+                                "SKIPPED_ALREADY_COMPLETED", "NAV_READY", "SINGLE", "FLOAT", "FIX"}
+            statuses = record.get("statuses")
+            statuses_safe = ([x for x in statuses if isinstance(x, str) and x in allowed_statuses][:16]
+                             if isinstance(statuses, list) else [])
+            allowed_outcomes = {"FAILED", "NO_STATUS", "STOP"}
+            print("QA_WORKER_DIAG:", json.dumps({
+                "rover": job["rover"], "window": job["since"],
+                "worker_result": outcome if isinstance(outcome, str) and outcome in allowed_outcomes else "UNRECOGNIZED",
+                "worker_exit_code": result.returncode,
+                "worker_statuses": statuses_safe,
+                "status_count": len(statuses) if isinstance(statuses, list) else None,
+            }), flush=True)
             raise RuntimeError("scheduler returned unexpected result")
         if result.returncode not in (0, 1):
             raise RuntimeError("scheduler container failed")
@@ -367,56 +431,104 @@ def main(nav_retry_only=False):
     state = read_state()
     if nav_retry_only:
         jobs = due_nav_jobs(state, now)
-        summary = {"selected": len(jobs), "waiting_nav": 0, "nav_ready": 0}
+        summary = {"selected": len(jobs), "waiting_nav": 0, "nav_ready": 0, "failed": 0}
         for job in jobs:
             try:
                 outcome = retry_nav_only(job, state, now)
-            except Exception as exc:
+            except (Exception) as exc:
+                # Never discard the job or mark NAV ready on a failed attempt.
+                # Persist a bounded retry delay before attempting the next job.
                 diagnostic("NAV_RETRY", exc, job)
-                raise
+                key = job["rover"] + "|" + job["since"]
+                entry = state["nav_pending"][key]
+                entry["retry_at"] = (now + NAV_RETRY_INTERVAL).isoformat()
+                entry["ready"] = False
+                write_state(state)
+                summary["failed"] += 1
+                continue
             summary[{"WAITING_NAV": "waiting_nav", "NAV_READY": "nav_ready"}[outcome]] += 1
         print("NAV_RETRY_SUMMARY:", json.dumps(summary), flush=True)
+        if summary["failed"]:
+            raise RuntimeError("NAV retry partial failure")
         return
+    # Recent-first: inspect a bounded 24-hour horizon of closed UTC hours.
+    # Historical discovery still gets at least one slot per run. No cursor reset.
+    cutoff = (now - dt.timedelta(minutes=20)).replace(
+        minute=0, second=0, microsecond=0)
+    recent_bounds = (max(START, cutoff - dt.timedelta(hours=RECENT_LOOKBACK_HOURS)), cutoff)
     ready = ready_nav_jobs(state)
-    if ready:
-        # Give accepted NAV backlog priority; do not advance discovery cursor.
-        summary = {"selected": len(ready), "waiting_nav": 0,
-                   "waiting_input": 0, "processed_or_idempotent": 0}
-        for job in ready:
-            try:
-                outcome = run_scheduler(job)
-            except Exception as exc:
-                diagnostic("QA_READY_PROCESS", exc, job)
-                raise
-            record_cooldown(state, job, outcome, now)
-            write_state(state)
+    summary = {"selected": 0, "waiting_nav": 0, "waiting_input": 0,
+               "processed_or_idempotent": 0, "failed": 0}
+    completed_keys = set()
+
+    def process_one(job, stage, nav_ready=False):
+        key = (job["rover"], job["since"])
+        if key in completed_keys:
+            return
+        completed_keys.add(key)
+        summary["selected"] += 1
+        try:
+            outcome = run_scheduler(job) if nav_ready else handle_job(job, state, now)
+            if nav_ready:
+                state.setdefault("ready_retry_after", {}).pop(
+                    job["rover"] + "|" + job["since"], None)
+                record_cooldown(state, job, outcome, now)
+                write_state(state)
             summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
                      "PROCESSED_OR_IDEMPOTENT": "processed_or_idempotent"}[outcome]] += 1
-        print("READY_QA_SUMMARY:", json.dumps(summary), flush=True)
-        return
-    bounds = discovery_bounds(state, now)
-    if bounds is None:
-        print("SCHEDULER_ONESHOT: NO_CLOSED_WINDOW", flush=True)
-        return
-    try:
-        jobs = run_scheduler(None, discovery=True, bounds=bounds, state=state)
-    except Exception as exc:
-        diagnostic("BACKLOG_DISCOVERY", exc)
-        raise
-    summary = {"selected": len(jobs), "waiting_nav": 0,
-               "waiting_input": 0, "processed_or_idempotent": 0}
-    for job in jobs:
-        try:
-            outcome = handle_job(job, state, now)
         except Exception as exc:
-            diagnostic("QA_WINDOW", exc, job)
-            raise
-        summary[{"WAITING_NAV": "waiting_nav", "WAITING_INPUT": "waiting_input",
-                 "PROCESSED_OR_IDEMPOTENT": "processed_or_idempotent"}[outcome]] += 1
-    state["cursor"] = (START if bounds[1] >= (now - dt.timedelta(minutes=20)).replace(
-        minute=0, second=0, microsecond=0) else bounds[1]).isoformat()
-    write_state(state)
+            # Do not repeatedly fail on the same hour; do not mark it completed.
+            # The cooldown is temporary and revisitable, not a deletion.
+            diagnostic(stage, exc, job)
+            job_key = job["rover"] + "|" + job["since"]
+            state["cooldowns"][job_key] = (now + dt.timedelta(minutes=15)).isoformat()
+            if nav_ready:
+                state.setdefault("ready_retry_after", {})[job_key] = (
+                    now + dt.timedelta(minutes=15)).isoformat()
+            write_state(state)
+            summary["failed"] += 1
+
+    # Ready NAV jobs bypass discovery; respect a cooldown after a failed run.
+    ready_eligible = [job for job in ready if
+        dt.datetime.fromisoformat(state.get("ready_retry_after", {}).get(
+            job["rover"] + "|" + job["since"], START.isoformat())) <= now]
+    for job in ready_eligible[:RECENT_JOBS]:
+        process_one(job, "QA_READY_PROCESS", nav_ready=True)
+
+    remaining_recent = RECENT_JOBS - summary["selected"]
+    if remaining_recent and recent_bounds[0] < recent_bounds[1]:
+        try:
+            recent_jobs = run_scheduler(None, discovery=True, bounds=recent_bounds,
+                                        state=state, limit=remaining_recent, newest_first=True)
+            print("RECENT_DISCOVERY:", json.dumps({
+                "since": recent_bounds[0].isoformat(),
+                "until": recent_bounds[1].isoformat(),
+                "selected": len(recent_jobs)}), flush=True)
+        except Exception as exc:
+            diagnostic("RECENT_DISCOVERY", exc)
+            recent_jobs = []
+            summary["failed"] += 1
+        for job in recent_jobs:
+            process_one(job, "QA_RECENT_WINDOW")
+
+    historical_budget = MAX_JOBS - summary["selected"]
+    bounds = discovery_bounds(state, now)
+    if historical_budget and bounds is not None:
+        try:
+            jobs = run_scheduler(None, discovery=True, bounds=bounds,
+                                 state=state, limit=historical_budget)
+        except Exception as exc:
+            diagnostic("BACKLOG_DISCOVERY", exc)
+            jobs = []
+            summary["failed"] += 1
+        else:
+            for job in jobs:
+                process_one(job, "QA_WINDOW")
+            state["cursor"] = (START if bounds[1] >= cutoff else bounds[1]).isoformat()
+            write_state(state)
     print("SCHEDULER_SUMMARY:", json.dumps(summary), flush=True)
+    if summary["failed"]:
+        raise RuntimeError("one or more QA windows failed; see QA_STAGE_FAILED")
     print("SCHEDULER_ONESHOT: PASS", flush=True)
 
 if __name__ == "__main__":

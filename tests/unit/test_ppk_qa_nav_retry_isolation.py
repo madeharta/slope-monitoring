@@ -54,16 +54,25 @@ def test_hourly_consumes_ready_before_discovery(tmp_path, monkeypatch):
     s['nav_pending'][KEY]['ready'] = True
     monkeypatch.setenv('MAGRIS_PPK_QA_RELEASE', '/unused-release')
     monkeypatch.setenv('MAGRIS_PPK_QA_IMAGE', 'unused-image')
+    events = []
+
+    def scheduler(job, **kwargs):
+        if kwargs.get('discovery'):
+            events.append('discovery')
+            return []
+        assert job == JOB
+        events.append('ready_worker')
+        return 'PROCESSED_OR_IDEMPOTENT'
+
     with patch.object(runner, 'ROOT', tmp_path), \
          patch.object(runner, 'CACHE', tmp_path), \
          patch.object(runner, 'STATE', tmp_path / 'state.json'), \
          patch.object(runner, 'read_state', return_value=s), \
-         patch.object(runner, 'run_scheduler', return_value='PROCESSED_OR_IDEMPOTENT') as worker, \
-         patch.object(runner, 'discovery_bounds', side_effect=AssertionError('discovery called')):
+         patch.object(runner, 'run_scheduler', side_effect=scheduler), \
+         patch.object(runner, 'discovery_bounds', return_value=None):
         runner.main(nav_retry_only=False)
-        worker.assert_called_once_with(JOB)
+    assert events[0] == 'ready_worker', events
     assert KEY not in s['nav_pending']
-
 
 def test_nav_only_main_never_launches_worker_or_discovery(tmp_path, monkeypatch):
     s = state()

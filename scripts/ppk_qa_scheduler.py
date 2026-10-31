@@ -285,51 +285,94 @@ def download_nav_resumable(url: str, cache: Path, name: str) -> bytes:
 
 
 def nav_for(start, end, cache: Path, download: bool):
+    """Return validated broadcast NAV; prefer IGS, fallback to BKG WRD_R on 404.
+
+    Each product keeps its original filename for auditability. Existing cache is
+    validated on every read; no file is promoted before decompression/validation.
+    """
     day = start.date()
     doy = day.timetuple().tm_yday
-    name = f'BRDC00IGS_R_{day.year}{doy:03d}0000_01D_MN.rnx.gz'
+    base = f'https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{day.year}/{doy:03d}/'
+    products = (
+        f'BRDC00IGS_R_{day.year}{doy:03d}0000_01D_MN.rnx.gz',
+        f'BRDC00WRD_R_{day.year}{doy:03d}0000_01D_MN.rnx.gz',
+    )
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
-    gz_path = cache / name
-    if not gz_path.exists():
-        if not download:
-            raise FileNotFoundError('WAITING_NAV cache missing')
-        url = f'https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{day.year}/{doy:03d}/{name}'
-        try:
-            data = download_nav_resumable(url, cache, name)
-        except urllib.error.HTTPError as exc:
-            if exc.code in (404, 429, 500, 502, 503, 504):
-                raise RuntimeError(f'WAITING_NAV HTTP_{exc.code}') from exc
-            raise RuntimeError(f'NAV_HTTP_ERROR_{exc.code}') from exc
-        except NavDeadlineExceeded as exc:
-            raise RuntimeError('WAITING_NAV download_deadline_exceeded') from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise RuntimeError('WAITING_NAV network_unavailable') from exc
-        if len(data) > MAX_NAV_GZIP_BYTES:
-            raise ValueError('NAV exceeds maximum size')
-        try:
-            plain = bounded_nav_decompress(data)
-            validate_nav(plain, start, end)
-        except (ValueError, OSError):
+
+    # Cache-first across both products: a previously validated WRD_R must not
+    # be blocked by a network timeout while probing the uncached IGS primary.
+    # A corrupt cached file fails closed; never silently treat it as valid.
+    for name in products:
+        gz_path = cache / name
+        if not gz_path.is_file():
+            continue
+        if gz_path.stat().st_size > MAX_NAV_GZIP_BYTES:
+            raise ValueError('NAV cached compressed size too large')
+        plain = bounded_nav_decompress(gz_path.read_bytes())
+        count = validate_nav(plain, start, end)
+        digest = hashlib.sha256(plain).hexdigest()
+        target = cache / name[:-3]
+        if not target.exists() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
+                tmp.write(plain)
+                candidate = Path(tmp.name)
+            candidate.replace(target)
+        print('NAV_SOURCE:', json.dumps({'product': name, 'source_url': base + name,
+                                          'sha256': digest, 'gps_ephemeris_count': count}), flush=True)
+        return target, count, digest
+
+    for index, name in enumerate(products):
+        gz_path = cache / name
+        if not gz_path.is_file():
+            if not download:
+                continue
+            try:
+                data = download_nav_resumable(base + name, cache, name)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404 and index == 0:
+                    # Missing primary product is the only reason to try WRD_R.
+                    print('NAV_PRIMARY_MISSING: HTTP_404; trying BRDC00WRD_R', flush=True)
+                    continue
+                if exc.code in (404, 429, 500, 502, 503, 504):
+                    raise RuntimeError(f'WAITING_NAV HTTP_{exc.code}') from exc
+                raise RuntimeError(f'NAV_HTTP_ERROR_{exc.code}') from exc
+            except NavDeadlineExceeded as exc:
+                raise RuntimeError('WAITING_NAV download_deadline_exceeded') from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                raise RuntimeError('WAITING_NAV network_unavailable') from exc
+
+            if len(data) > MAX_NAV_GZIP_BYTES:
+                raise ValueError('NAV exceeds maximum size')
+            try:
+                plain = bounded_nav_decompress(data)
+                validate_nav(plain, start, end)
+            except (ValueError, OSError):
+                (cache / (name + '.part')).unlink(missing_ok=True)
+                (cache / (name + '.part.json')).unlink(missing_ok=True)
+                raise
+            with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
+                tmp.write(data)
+                candidate = Path(tmp.name)
+            candidate.replace(gz_path)
             (cache / (name + '.part')).unlink(missing_ok=True)
             (cache / (name + '.part.json')).unlink(missing_ok=True)
-            raise
-        with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
-            tmp.write(data)
-            candidate = Path(tmp.name)
-        candidate.replace(gz_path)
-        (cache / (name + '.part')).unlink(missing_ok=True)
-        (cache / (name + '.part.json')).unlink(missing_ok=True)
-    if gz_path.stat().st_size > MAX_NAV_GZIP_BYTES:
-        raise ValueError('NAV cached compressed size too large')
-    plain = bounded_nav_decompress(gz_path.read_bytes())
-    count = validate_nav(plain, start, end)
-    target = cache / name[:-3]
-    if not target.exists() or hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(plain).digest():
-        with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
-            tmp.write(plain)
-            candidate = Path(tmp.name)
-        candidate.replace(target)
-    return target, count, hashlib.sha256(plain).hexdigest()
+
+        if gz_path.stat().st_size > MAX_NAV_GZIP_BYTES:
+            raise ValueError('NAV cached compressed size too large')
+        plain = bounded_nav_decompress(gz_path.read_bytes())
+        count = validate_nav(plain, start, end)
+        target = cache / name[:-3]
+        digest = hashlib.sha256(plain).hexdigest()
+        if not target.exists() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
+                tmp.write(plain)
+                candidate = Path(tmp.name)
+            candidate.replace(target)
+        print('NAV_SOURCE:', json.dumps({'product': name, 'source_url': base + name,
+                                          'sha256': digest, 'gps_ephemeris_count': count}), flush=True)
+        return target, count, digest
+
+    raise FileNotFoundError('WAITING_NAV cache missing')
 
 
 def validate_nav(raw: bytes, start, end):
