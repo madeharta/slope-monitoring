@@ -260,7 +260,7 @@ export default function PPK() {
       </section>
       </div>
 
-      
+
 
       </details>
       <details className="panel ppk-card ppk-method-note">
