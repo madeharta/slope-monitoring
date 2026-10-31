@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useStore, wibClock } from "../store";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -36,6 +36,7 @@ export default function TopBar() {
   const isMapRoute = location.pathname === "/";
   const { auth, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { navKey, overview, connected, clock, variant, toggleVariant, setNav } = useStore(
     (s) => ({
       navKey: s.nav, overview: s.overview, connected: s.connected, clock: s.clock,
@@ -53,10 +54,49 @@ export default function TopBar() {
   const items = [
     { key: "map", label: "Overview", icon: I.dash, onClick: () => { nav("/"); setNav("map"); } },
     { key: "analytics", label: "Analytics", icon: I.chart, onClick: () => { nav("/sensors"); setNav("analytics"); } },
-    { key: "ppk", label: "PPK", icon: I.satellite, onClick: () => { nav("/ppk"); setNav("ppk"); } },
     { key: "blast", label: "Blast", icon: I.bell, onClick: () => { nav("/blast"); setNav("blast"); } },
     { key: "alarms", label: "Alarms", icon: I.bell, onClick: () => setNav("alarms") },
+    { key: "uploads", label: "Uploads", icon: I.map, onClick: () => nav("/uploads") },
+    { key: "devices", label: "Devices", icon: I.dash, onClick: () => nav("/devices") },
+    { key: "weather", label: "Weather Station", icon: I.chart, onClick: () => { nav("/weather"); setNav("weather"); } },
   ];
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileNavOpen]);
+
+  const runMobileNav = (item) => {
+    item.onClick();
+    setMobileNavOpen(false);
+  };
+
+  const isItemActive = (item) => {
+    const path = location.pathname;
+    const routes = {
+      map: path === "/",
+      analytics: path === "/sensors" || path.startsWith("/sensors/"),
+      blast: path === "/blast" || path.startsWith("/blast/"),
+      uploads: path === "/uploads" || path.startsWith("/uploads/"),
+      devices: path === "/devices" || path.startsWith("/devices/"),
+      weather: path === "/weather" || path.startsWith("/weather/"),
+      alarms: path === "/" && navKey === "alarms",
+    };
+    if (item.key === "map" && path === "/" && navKey === "alarms") {
+      return false;
+    }
+    return routes[item.key] ?? false;
+  };
   return (
     <header className={"topbar" + (isMapRoute ? "" : " topbar--solid")}>
       <div className="brand">
@@ -65,8 +105,9 @@ export default function TopBar() {
       </div>
       <nav className="topnav" aria-label="Primary">
         {items.map((it) => (
-          <button key={it.key} className={"nav-item" + ((navKey === it.key || (it.key === "analytics" && location.pathname.startsWith("/sensors")) || (it.key === "ppk" && location.pathname.startsWith("/ppk")) || (it.key === "blast" && location.pathname.startsWith("/blast"))) ? " on" : "")}
-            aria-current={(navKey === it.key || (it.key === "analytics" && location.pathname.startsWith("/sensors")) || (it.key === "ppk" && location.pathname.startsWith("/ppk")) || (it.key === "blast" && location.pathname.startsWith("/blast"))) ? "page" : "false"} onClick={it.onClick}>
+          <button key={it.key} className={"nav-item" + (isItemActive(it) ? " on" : "")}
+            style={it.key === "weather" ? { color: "#b42318", fontWeight: 700, ...(isItemActive(it) ? { backgroundColor: "rgba(180, 35, 24, 0.09)" } : {}) } : undefined}
+            aria-current={isItemActive(it) ? "page" : "false"} onClick={it.onClick}>
             {it.icon}<span>{it.label}</span>
           </button>
         ))}
@@ -84,11 +125,13 @@ export default function TopBar() {
           </svg>
           {operationalReady ? (
             <>
-              <span className="un">{active}</span> active
+              <span className="un">{active}</span>
+              <span className="alarm-text">active</span>
             </>
           ) : (
             <>
-              <span className="un">0</span> operational{" "}
+              <span className="un">0</span>
+              <span className="alarm-text">operational</span>
               <span className="rlbl">suppressed</span>
             </>
           )}
@@ -96,12 +139,39 @@ export default function TopBar() {
         <div className="search"><span className="ic" aria-hidden>⌕</span>
           <input type="text" placeholder="Search slope / device…" aria-label="Search" />
         </div>
-        <span className={"live" + (connected ? "" : " off")}><span className="dot" />{connected ? "Live" : "Offline"}</span>
+        <span className={"live" + (connected ? "" : " off")} title="SSE transport status, not proof of live sensor ingestion"><span className="dot" />{connected ? "Stream linked" : "Stream offline"}</span>
         <span className="clock">{wibClock(clock)}</span>
         <button className="variant-toggle" onClick={toggleVariant} title="Toggle theme (Vibrant / ISA-101 mono)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" /></svg>
           {variant === "editorial" ? "Editorial" : "ISA-101"}
         </button>
+        <button
+          className="mobile-nav-toggle"
+          type="button"
+          aria-label={mobileNavOpen ? "Tutup navigasi" : "Buka navigasi"}
+          aria-expanded={mobileNavOpen}
+          aria-controls="mobile-primary-nav"
+          onClick={() => {
+            setProfileOpen(false);
+            setMobileNavOpen((value) => !value);
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            {mobileNavOpen ? (
+              <>
+                <path d="M6 6l12 12" />
+                <path d="M18 6 6 18" />
+              </>
+            ) : (
+              <>
+                <path d="M4 7h16" />
+                <path d="M4 12h16" />
+                <path d="M4 17h16" />
+              </>
+            )}
+          </svg>
+        </button>
+
         <div className="profile-menu" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setProfileOpen(false); }}>
           <button className="avatar" aria-label="Account" aria-expanded={profileOpen} onClick={() => setProfileOpen((v) => !v)}>
             {initialsFromEmail(auth?.email)}
@@ -118,11 +188,17 @@ export default function TopBar() {
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/devices"); }}>
                 Devices
               </button>
+              <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/base-references"); }}>
+                BASE Reference Management
+              </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/uploads"); }}>
                 Uploads
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/ppk"); setNav("ppk"); }}>
                 PPK Technical Results
+              </button>
+              <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/blast"); setNav("blast"); }}>
+                Blast Control
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/settings"); }}>
                 Settings
@@ -136,21 +212,57 @@ export default function TopBar() {
                 </button>
               )}
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/mfa/enroll"); }}>
-                Aktifkan / Kelola MFA (2FA)
+                Enable / Manage MFA (2FA)
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); nav("/panduan"); }}>
-                Panduan Penggunaan
+                User Guide
               </button>
               <button role="menuitem" onClick={() => { setProfileOpen(false); window.open("mailto:support@namadomain.id"); }}>
-                Bantuan
+                Help
               </button>
               <button role="menuitem" className="pd-danger" onClick={() => { setProfileOpen(false); logout(); nav("/login", { replace: true }); }}>
-                Keluar
+                Sign Out
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {mobileNavOpen && (
+        <div id="mobile-primary-nav" className="mobile-nav-panel" role="dialog" aria-label="Primary navigation">
+          <nav className="mobile-nav-list" aria-label="Primary mobile">
+            {items.map((it) => (
+              <button
+                key={it.key}
+                type="button"
+                className={"mobile-nav-item" + (isItemActive(it) ? " on" : "")}
+                style={it.key === "weather" ? { color: "#b42318", fontWeight: 700, ...(isItemActive(it) ? { backgroundColor: "rgba(180, 35, 24, 0.09)" } : {}) } : undefined}
+                aria-current={isItemActive(it) ? "page" : "false"}
+                onClick={() => runMobileNav(it)}
+              >
+                {it.icon}
+                <span>{it.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="mobile-nav-status">
+            <div>
+              <span className={"mobile-status-dot" + (connected ? "" : " off")} />
+              <span>{connected ? "Connected / Live" : "Offline"}</span>
+            </div>
+
+            <div className={operationalReady ? "ready" : "suppressed"}>
+              <span className="mobile-status-dot" />
+              <span>
+                {operationalReady
+                  ? `${active} operational alarm${active === 1 ? "" : "s"} active`
+                  : "Operational alarms suppressed pending validation"}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

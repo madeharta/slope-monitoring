@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { getSite } from "../api";
@@ -8,12 +8,17 @@ import PanelChart from "../components/PanelChart.jsx";
 import TimeToFailure, { estimateFailure } from "../components/TimeToFailure.jsx";
 import MeasurementTable from "../components/MeasurementTable.jsx";
 
-const LABEL = { bahaya: "Bahaya", siaga: "Siaga", normal: "Normal", unknown: "Belum terverifikasi" };
-const HOURS = [["6h", 6], ["24h", 24], ["3d", 72], ["7d", 168]];
+const LABEL = { bahaya: "Danger", siaga: "Warning", normal: "Normal", unknown: "Not verified" };
 // Derived-quantity thresholds that have no backend entry (velocity is computed
 // from the displacement series, so it is not in config.THRESHOLDS).
 const VEL_TH = { dir: "high", siaga: 5, bahaya: 10 };
 const DAY = 86_400_000;
+
+// datetime-local fields use the browser's local timezone (not UTC strings).
+function toDatetimeLocal(date) {
+  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return adjusted.toISOString().slice(0, 16);
+}
 
 const fmt = (v, d = 2) => (v == null ? "—" : Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(d));
 
@@ -189,10 +194,44 @@ function CrossSection({ sensors }) {
   );
 }
 
+
+// B12_PPK_CROSSPAGE_AUTO: isolated QA outcomes, never operational displacement.
+function summarizeExperimentalPpkQa(payload) {
+  if (payload?.scope !== "EXPERIMENTAL_ENGINE_QA_ONLY" || payload?.reference_type !== "PROVISIONAL_SPP" || payload?.validation_status !== "unvalidated" || !Array.isArray(payload.rows)) {
+    throw new Error("Unexpected experimental QA contract");
+  }
+  const counts = { FIX: 0, FLOAT: 0, SINGLE: 0, OTHER: 0 };
+  for (const row of payload.rows) {
+    const q = Number(row.rtklib_quality);
+    if (q === 1) counts.FIX += 1;
+    else if (q === 2) counts.FLOAT += 1;
+    else if (q === 5) counts.SINGLE += 1;
+    else counts.OTHER += 1;
+  }
+  return { total: payload.rows.length, counts, limited: payload.rows.length >= 2000 };
+}
+
 export default function SlopeDetail() {
   const { id } = useParams();
   const { authFetch } = useAuth();
   const [siteDevices, setSiteDevices] = useState(null);
+
+  // B12_PPK_CROSSPAGE_AUTO: technical rover QA, not an operational slope measurement.
+  const [ppkQaSummary, setPpkQaSummary] = useState({state: "loading", result: null});
+  useEffect(() => {
+    if (id !== "ITB-STAGING-01") { setPpkQaSummary({state: "empty", result: null}); return; }
+    let alive = true;
+    const params = new URLSearchParams({site_id: id, rover_device_id: "ROVER-B1-02", limit: "2000"});
+    authFetch(`/api/v1/ppk/qa/solutions?${params}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`PPK QA HTTP ${response.status}`);
+        return summarizeExperimentalPpkQa(await response.json());
+      })
+      .then((result) => { if (alive) setPpkQaSummary({state: "ok", result}); })
+      .catch(() => { if (alive) setPpkQaSummary({state: "error", result: null}); });
+    return () => { alive = false; };
+  }, [id, authFetch]);
+
 
   // Daftar device di site ini (2026-09-20, baru — sebelumnya halaman
   // detail tidak pernah menampilkan device fisik apa yang ada di lokasi
@@ -208,12 +247,20 @@ export default function SlopeDetail() {
   }, [id, authFetch]);
 
   const navigate = useNavigate();
-  const { overview, recent, variant } = useStore((s) => ({ overview: s.overview, recent: s.recent, variant: s.variant }));
+  const { overview, variant } = useStore((s) => ({ overview: s.overview, variant: s.variant }));
   const pal = getPalette(variant);
-  const [hours, setHours] = useState(24);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const operationalReady = overview?.validation?.operational_ready === true;
+  const [hours] = useState(13 * 24); // API fallback only; range is always explicit.
+  const [initialRange] = useState(() => {
+    const now = new Date();
+    return { from: toDatetimeLocal(new Date(now.getTime() - 13 * DAY)), to: toDatetimeLocal(now) };
+  });
+  const [customFrom, setCustomFrom] = useState(initialRange.from);
+  const [customTo, setCustomTo] = useState(initialRange.to);
   const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [lastLoadedRange, setLastLoadedRange] = useState(null);
+  const autoAnchoredSites = useRef(new Set());
   const [device, setDevice] = useState(null); // isolated sensor group, or null
   const [selectedRover, setSelectedRover] = useState(null);
   const [detailView, setDetailView] = useState("charts");
@@ -221,47 +268,135 @@ export default function SlopeDetail() {
 
   useEffect(() => {
     let alive = true;
+    let timer = null;
+    let controller = null;
+    let retryCount = 0;
+    setLoadError(null);
+
+    const POLL_MS = 8000;
+    const MAX_BACKOFF_MS = 60000;
+
     // Kalau customFrom DAN customTo keduanya diisi -> kirim rentang eksplisit.
-    // Kalau tidak -> perilaku lama (hours relatif ke sekarang, tombol preset).
+    // Kalau tidak -> preset/live range dan polling completion-scheduled.
     const fromIso = customFrom ? new Date(customFrom).toISOString() : null;
     const toIso = customTo ? new Date(customTo).toISOString() : null;
-    const load = () =>
-      getSite(id, hours, fromIso, toIso)
-        .then((d) => {
-          if (alive) {
-            setData(d);
-            setTableNow(Date.now());
-          }
-        })
-        .catch(() => {});
+    const shouldPoll = !(fromIso && toIso);
+
+    const schedule = (delayMs) => {
+      if (!alive || !shouldPoll) return;
+
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+
+      timer = setTimeout(() => {
+        timer = null;
+        load();
+      }, Math.max(0, delayMs));
+    };
+
+    const fallbackBackoff = () => {
+      const base = Math.min(
+        MAX_BACKOFF_MS,
+        POLL_MS * (2 ** retryCount),
+      );
+
+      retryCount = Math.min(retryCount + 1, 3);
+
+      return base + Math.floor(Math.random() * 1000);
+    };
+
+    const load = async () => {
+      if (!alive || controller !== null) return;
+
+      controller = new AbortController();
+
+      try {
+        const d = await getSite(
+          id,
+          hours,
+          fromIso,
+          toIso,
+          { signal: controller.signal, authFetch },
+        );
+
+        if (!alive) return;
+
+        setData(d);
+        setLoadError(null);
+        setLastLoadedRange({ siteId: id, hours, from: fromIso, to: toIso });
+        setTableNow(Date.now());
+
+        retryCount = 0;
+        schedule(POLL_MS);
+      } catch (error) {
+        if (!alive || error?.name === "AbortError") return;
+        setLoadError("Measurements could not be loaded for the selected time range.");
+
+        // Historical custom ranges intentionally remain one-shot.
+        if (!shouldPoll) return;
+
+        if (
+          error?.status === 429 &&
+          Number.isFinite(error?.retryAfterMs)
+        ) {
+          schedule(error.retryAfterMs);
+          return;
+        }
+
+        // 429 tanpa Retry-After, network failure, dan transient error lain
+        // memakai bounded exponential backoff + jitter.
+        schedule(fallbackBackoff());
+      } finally {
+        controller = null;
+      }
+    };
+
+    // Immediate first request.
     load();
-    // Polling 8s dimatikan untuk rentang kustom (masa lalu tidak berubah,
-    // tidak perlu refetch berulang) — cuma aktif untuk preset (data "sampai
-    // sekarang" yang memang terus bertambah).
-    if (fromIso && toIso) return () => { alive = false; };
-    const t = setInterval(load, 8000);
-    return () => { alive = false; clearInterval(t); };
-  }, [id, hours, customFrom, customTo]);
+
+    return () => {
+      alive = false;
+
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      if (controller) {
+        controller.abort();
+        controller = null;
+      }
+    };
+  }, [id, hours, customFrom, customTo, authFetch]);
 
   const name = overview?.slopes.find((s) => s.site_id === id)?.name || id;
   const site = overview?.slopes.find((s) => s.site_id === id);
-  const live = useMemo(
-    () => (recent[id] || []).filter((e) => new Date(e.t) > new Date(Date.now() - hours * 3_600_000)),
-    [recent, id, hours],
-  );
+  // On the first successful site fetch, shift the window to the latest known
+  // measurement. Keep subsequent manual date selections unchanged.
+  useEffect(() => {
+    if (!data || lastLoadedRange?.siteId !== id || autoAnchoredSites.current.has(id)) return;
+    const timestamps = (data.series || []).flatMap((series) =>
+      (series.points || []).map((point) => Date.parse(point[0])).filter(Number.isFinite));
+    const staleMs = Date.parse(data.latest_stale_reading?.time || "");
+    const latestMs = Number.isFinite(staleMs)
+      ? staleMs : (timestamps.length ? Math.max(...timestamps) : NaN);
+    if (!Number.isFinite(latestMs) || latestMs > Date.now()) return;
+    autoAnchoredSites.current.add(id);
+    const targetFrom = toDatetimeLocal(new Date(latestMs - 13 * DAY));
+    const targetTo = toDatetimeLocal(new Date(Math.min(Date.now(), latestMs + 60 * 60_000)));
+    setCustomFrom(targetFrom);
+    setCustomTo(targetTo);
+  }, [data, id, lastLoadedRange]);
 
-  // merge historical series + live tail into one point-array per quantity
+  // Only historical API series are rendered: never merge live events.
+  // map historical series into one point-array per quantity
   const byQ = useMemo(() => {
     const m = {};
     for (const s of data?.series || []) m[s.quantity] = { unit: s.unit, pts: s.points.map((p) => [p[0], p[1]]) };
-    for (const ev of live) {
-      if (ev.value == null) continue;
-      if (!m[ev.quantity]) m[ev.quantity] = { unit: ev.unit, pts: [] };
-      m[ev.quantity].pts.push([ev.t, ev.value]);
-    }
     for (const q in m) m[q].pts.sort((a, b) => new Date(a[0]) - new Date(b[0]));
     return m;
-  }, [data, live]);
+  }, [data]);
 
   const Q = (q) => (byQ[q] ? byQ[q].pts : []);
   const roverIds = useMemo(
@@ -290,16 +425,39 @@ export default function SlopeDetail() {
     return { disp: displacement, velocity, acceleration };
   }, [byQ, data, selectedRover]);
 
-  if (!data) return <div className="loading">Loading {name}…</div>;
+  if (!data) return <div className="loading">{loadError || `Loading ${name}…`}</div>;
 
   const th = data.thresholds || {};
+  const isCurrentRange = lastLoadedRange?.hours === hours &&
+    lastLoadedRange?.from === (customFrom ? new Date(customFrom).toISOString() : null) &&
+    lastLoadedRange?.to === (customTo ? new Date(customTo).toISOString() : null);
+  const plotRange = customFrom && customTo
+    ? { from: new Date(customFrom).toISOString(), to: new Date(customTo).toISOString() }
+    : { from: new Date(Date.now() - hours * 3600000).toISOString(), to: new Date().toISOString() };
+  const chartRange = isCurrentRange ? plotRange : null;
   const STATUS = pal.marker;      // concrete status colours for the canvas charts
   const BAND = pal.band;          // rgba band fills
   const col = (q) => pal.line[q] || pal.lineDefault;
 
+  const latestPointTimes = (data?.series || []).flatMap((s) =>
+    (s.points || []).map((p) => Date.parse(p[0])).filter(Number.isFinite));
+  const candidateLatest = Date.parse(data?.latest_stale_reading?.time || "");
+  const latestHistoricalMs = Number.isFinite(candidateLatest)
+    ? candidateLatest : (latestPointTimes.length ? Math.max(...latestPointTimes) : NaN);
+  const canViewHistorical = Number.isFinite(latestHistoricalMs) && latestHistoricalMs <= Date.now();
+  const viewLatestAvailable = () => {
+    if (!canViewHistorical) return;
+    const from = new Date(latestHistoricalMs - 13 * DAY);
+    const to = new Date(Math.min(Date.now(), latestHistoricalMs + 60 * 60_000));
+    setCustomFrom(toDatetimeLocal(from));
+    setCustomTo(toDatetimeLocal(to));
+    setDetailView("charts");
+  };
+
   // device-isolate opacity: dim series not in the selected group
   const op = (q) => (device === null || GROUP_OF[q] === device ? 1 : 0.14);
   const groupStatus = (g) => {
+    if (!operationalReady && g.key === "gnss") return "unknown";
     const sts = g.quantities.map((q) => statusFor(th[q], last(Q(q))));
     return sts.includes("bahaya") ? "bahaya" : sts.includes("siaga") ? "siaga" : "normal";
   };
@@ -307,10 +465,10 @@ export default function SlopeDetail() {
 
   // ---- stat-card scalars ----
   const dispNow = last(QD("displacement"));
-  const dispStatus = statusFor(th.displacement, dispNow);
+  const dispStatus = operationalReady ? statusFor(th.displacement, dispNow) : "unknown";
   const tiltNow = last(Q("tilt_x"));
   const velNow = last(derived.velocity);
-  const velStatus = statusFor(VEL_TH, velNow);
+  const velStatus = operationalReady ? statusFor(VEL_TH, velNow) : "unknown";
   // FIX (2026-09-20): pore_pressure dihapus — tidak ada piezometer di
   // hardware sistem ini (cuma GNSS + accelerometer). Stat card + panel
   // "Rainfall vs Pore Water Pressure" yang memakainya juga dihapus di
@@ -336,7 +494,7 @@ export default function SlopeDetail() {
   const disp24 = dispNow != null ? dispNow - (valueAt(QD("displacement"), Date.now() - DAY) ?? dispNow) : null;
 
   // ---- inverse-velocity estimate (suppressed if the slope is not accelerating) ----
-  const est = estimateFailure(QD("displacement"));
+  const est = operationalReady ? estimateFailure(QD("displacement")) : null;
 
   // ---- per-panel dynamic ranges ----
   const dispMax = Math.max(15, Math.ceil(maxOf(QD("displacement"), 12) * 1.1));
@@ -353,52 +511,81 @@ export default function SlopeDetail() {
     </span>
   );
 
+  const hasDisplacementSeries = ["displacement", "disp_e", "disp_n", "disp_u"].some((q) => QD(q).length > 0);
+  const hasTiltSeries = ["tilt_x", "tilt_y"].some((q) => Q(q).length > 0);
+  const hasVelocitySeries = operationalReady && (derived.velocity.length > 0 || derived.acceleration.length > 0);
+
+  const formatWeather = (value, digits = 1) => {
+    if (value === null || value === undefined || value === "") return "—";
+    const n = Number(value);
+    return Number.isFinite(n) ? new Intl.NumberFormat("id-ID", { maximumFractionDigits: digits }).format(n) : "—";
+  };
+
   return (
     <div className="l2 l2detail">
-      <div role="status" style={{background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43"}}>DATA BELUM TERVALIDASI LAPANGAN. Seri displacement historis sebelum persetujuan baseline tidak ditampilkan; status bukan jaminan keselamatan.</div>
+      <div role="status" style={{background:"#35240c",color:"#ffe7ac",padding:"8px 12px",border:"1px solid #b88b43"}}>DATA NOT FIELD VALIDATED. Historical displacement series are not displayed before baseline approval; the displayed status does not guarantee safety.</div>
+      {isCurrentRange && !loadError &&
+        !(data?.series || []).some((s) => s.points?.length > 0) &&
+        !(data?.device_series || []).some((s) => s.points?.length > 0) && (
+          <div role="status" style={{ margin: "12px 0", padding: 12, border: "1px solid var(--line)", borderRadius: 8, background: "var(--panel)", color: "var(--ink)" }}>
+            No technical sensor measurements available for the selected time range. External weather observations may still be available.
+            {data?.latest_stale_reading?.time && (
+              <div style={{ marginTop: 6 }}>
+                Last recorded measurement: {new Date(data.latest_stale_reading.time).toLocaleString("en-GB", { timeZone: "Asia/Jakarta" })} WIB.
+                Historical data may be available through a custom date range.
+
+              </div>
+            )}
+          </div>
+        )}
+      {id === "ITB-STAGING-01" && ppkQaSummary.state === "ok" && ppkQaSummary.result?.total > 0 && (
+        <section aria-label="Experimental PPK QA summary" style={{border:"1px solid #dbe3eb",borderRadius:10,padding:"12px 16px",margin:"12px 0",background:"var(--surface,#fff)"}}>
+          <strong>PPK experimental QA · ROVER-B1-02</strong>
+          <div style={{display:"flex",flexWrap:"wrap",gap:16,marginTop:8}}>
+            <span>FIX <b>{ppkQaSummary.result.counts.FIX}</b></span>
+            <span>FLOAT <b>{ppkQaSummary.result.counts.FLOAT}</b></span>
+            <span>SINGLE <b>{ppkQaSummary.result.counts.SINGLE}</b></span>
+            <span>Total <b>{ppkQaSummary.result.total}</b></span>
+          </div>
+          <small>PROVISIONAL_SPP · unvalidated · research output, not operational displacement or an alarm basis.</small>
+          <button style={{marginLeft:12}} onClick={() => navigate("/ppk")}>Detail QA →</button>
+        </section>
+      )}
       <div className="l2head">
         <div className="crumb">
           <button onClick={() => navigate("/")}>← Overview</button><span>/</span>
           <span className="cur">{name}</span>
         </div>
-        <span className={"badge " + data.status}><span className="pip" />{LABEL[data.status]}</span>
-        <span className="action2">{data.action}</span>
+        <span className={"badge " + (operationalReady ? data.status : "unknown")}>
+          <span className="pip" />
+          {operationalReady ? LABEL[data.status] : LABEL.unknown}
+        </span>
+        <span className="action2">
+          {operationalReady ? data.action : "Technical telemetry only · production validation pending"}
+        </span>
         {site && (
           <span className="site-meta">{id} · {site.lat?.toFixed(4)}, {site.lon?.toFixed(4)}</span>
         )}
-        <div className="tabs" role="group" aria-label="Time range">
-          {HOURS.map(([lbl, h]) => (
-            <button key={h} className={h === hours ? "on" : ""} onClick={() => { setHours(h); setCustomFrom(""); setCustomTo(""); }}>{lbl}</button>
-          ))}
-          {/* Rentang kustom (2026-09-22, revisi — start SAJA sebelumnya,
-              sekarang start+end penuh sesuai permintaan). Tidak perlu
-              polling 8s untuk rentang ini (lihat useEffect) karena data
-              masa lalu tidak berubah. */}
+        <div className="tabs" role="group" aria-label="Historical measurement time range" style={{gap: 8, flexWrap: "wrap"}}>
           <span className="tabs-custom-range">
-            <input
-              type="datetime-local"
-              className={"tabs-custom" + (customFrom ? " on" : "")}
-              value={customFrom}
-              max={customTo || undefined}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              title="Dari"
-            />
+            <input type="datetime-local" className="tabs-custom on" value={customFrom}
+              max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} title="From" aria-label="Historical start" />
             <span className="tabs-custom-sep">–</span>
-            <input
-              type="datetime-local"
-              className={"tabs-custom" + (customTo ? " on" : "")}
-              value={customTo}
-              min={customFrom || undefined}
-              max={new Date(Date.now() - Date.now() % 60000).toISOString().slice(0, 16)}
-              onChange={(e) => setCustomTo(e.target.value)}
-              title="Sampai"
-            />
+            <input type="datetime-local" className="tabs-custom on" value={customTo}
+              min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} title="Until" aria-label="Historical end" />
           </span>
+          <button type="button" onClick={viewLatestAvailable} disabled={!canViewHistorical}
+            title={canViewHistorical ? "Show the latest recorded measurements" : "No latest reading known yet"}
+            style={{background:canViewHistorical ? "#176b83" : "#9ba8b3", color:"white", border:"1px solid #176b83", borderRadius:8, padding:"9px 13px", fontWeight:700, cursor:canViewHistorical ? "pointer" : "not-allowed", whiteSpace:"nowrap"}}>
+            View Latest Available Data
+          </button>
         </div>
       </div>
 
+      {loadError && <div role="alert" style={{ padding: "10px 16px", color: "#9d432d" }}>{loadError} The previous measurements may still be shown.</div>}
+      {!isCurrentRange && !loadError && <div role="status" style={{ padding: "8px 16px" }}>Loading measurements for the selected time range…</div>}
       <div className="detail-view-switch" role="group" aria-label="Detail view">
-        <button className={detailView === "charts" ? "on" : ""} onClick={() => setDetailView("charts")}>Grafik</button>
+        <button className={detailView === "charts" ? "on" : ""} onClick={() => setDetailView("charts")}>Charts</button>
         <button className={detailView === "table" ? "on" : ""} onClick={() => setDetailView("table")}>Data Table</button>
       </div>
 
@@ -427,7 +614,19 @@ export default function SlopeDetail() {
           const st = groupStatus(g);
           return (
             <button key={g.key} className={"dev-pill" + (device === g.key ? " on" : "")} onClick={() => setDevice((d) => (d === g.key ? null : g.key))}>
-              <span className="dev-dot" style={{ background: st === "bahaya" ? "var(--bahaya)" : st === "siaga" ? "var(--siaga)" : "var(--ok)" }} />
+              <span
+                className="dev-dot"
+                style={{
+                  background:
+                    st === "bahaya"
+                      ? "var(--bahaya)"
+                      : st === "siaga"
+                        ? "var(--siaga)"
+                        : st === "unknown"
+                          ? "var(--ink-3)"
+                          : "var(--ok)",
+                }}
+              />
               {g.label}
             </button>
           );
@@ -441,14 +640,20 @@ export default function SlopeDetail() {
 
       {/* stat cards */}
       <div className="statcard-row">
-        <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />
-        <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="deg · saat ledakan terakhir (bukan real-time)" status={statusFor(th.tilt_x, tiltNow)} />
-        <StatCard label="Slope velocity" value={fmt(velNow, 1)} sub={`mm/day · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`} status={velStatus} />
-        <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (bukan sensor lapangan)" status="normal" />
+        {hasDisplacementSeries && <StatCard label={`3D resultant displacement${selectedRover ? ` · ${selectedRover}` : ""}`} value={fmt(dispNow)} sub="mm · technical PPK · UNVALIDATED" status={dispStatus} />}
+        {hasTiltSeries && <StatCard label="Tilt X (ADXL355)" value={fmt(tiltNow)} sub="degrees · at last blast (not real-time)" status={statusFor(th.tilt_x, tiltNow)} />}
+        {hasVelocitySeries && <StatCard
+          label="Slope velocity"
+          value={fmt(velNow, 1)}
+          sub={`mm/day · derived QA only · 24 h Δ ${disp24 != null ? (disp24 >= 0 ? "+" : "") + fmt(disp24, 1) : "—"} mm`}
+          status={velStatus}
+        />}
+        <StatCard label="Rainfall, trailing 24 h" value={fmt(rain24, 0)} sub="mm · Open-Meteo (not an on-site sensor)" status="normal" />
       </div>
 
       {/* analytics grid */}
       <div className="analytics-grid">
+        {hasDisplacementSeries && (
         <Panel title="GNSS 3D Displacement" sub="technical PPK · UNVALIDATED" right={readout(dispNow, "mm", dispStatus)}>
           <div className="panel-body">
             {roverIds.length > 1 && (
@@ -463,9 +668,11 @@ export default function SlopeDetail() {
               { label: "ΔX east", color: col("disp_e"), dash: "dashed" },
               { label: "ΔY north", color: col("disp_n"), dash: "dotted" },
               { label: "ΔZ vertical", color: col("disp_u"), dash: "dotted" },
-              { label: "10.00 mm limit", color: STATUS.bahaya, dash: "dashed" },
+              ...(operationalReady
+                ? [{ label: "10.00 mm limit", color: STATUS.bahaya, dash: "dashed" }]
+                : []),
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "mm", min: dispMin, max: dispMax }}
               series={[
                 { name: "ΔZ vertical", data: QD("disp_u"), color: col("disp_u"), width: 1.4, dash: "dotted", opacity: op("disp_u") },
@@ -473,19 +680,25 @@ export default function SlopeDetail() {
                 { name: "ΔX east", data: QD("disp_e"), color: col("disp_e"), width: 1.6, dash: "dashed", opacity: op("disp_e") },
                 { name: "3D resultant", data: QD("displacement"), color: col("displacement"), width: 2.4, z: 3, opacity: op("displacement") },
               ]}
-              bands={[{ from: th.displacement?.bahaya ?? 10, to: dispMax, color: BAND.bahaya }]}
-              hlines={[{ y: th.displacement?.bahaya ?? 10, color: STATUS.bahaya, label: (th.displacement?.bahaya ?? 10).toFixed(2) }]}
+              bands={operationalReady
+                ? [{ from: th.displacement?.bahaya ?? 10, to: dispMax, color: BAND.bahaya }]
+                : []}
+              hlines={operationalReady
+                ? [{ y: th.displacement?.bahaya ?? 10, color: STATUS.bahaya, label: (th.displacement?.bahaya ?? 10).toFixed(2) }]
+                : []}
             />
           </div>
         </Panel>
+        )}
 
+        {hasTiltSeries && (
         <Panel title="Accelerometer Tilt" sub="ADXL355 · derived · UNVERIFIED" right={readout(tiltNow, "deg", statusFor(th.tilt_x, tiltNow))}>
           <div className="panel-body">
             <Legend items={[
               { label: "Tilt X · deg", color: col("tilt_x") },
               { label: "Tilt Y · deg", color: col("tilt_y"), dash: "dashed" },
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "deg", min: 0, max: tiltMax }}
               series={[
                 { name: "Tilt Y", data: Q("tilt_y"), color: col("tilt_y"), width: 1.6, dash: "dashed", opacity: op("tilt_y") },
@@ -499,30 +712,48 @@ export default function SlopeDetail() {
             <div className="wx-chart-note">Tilt is derived from acceleration; it is not gyroscope/angular-rate data.</div>
           </div>
         </Panel>
+        )}
 
-        <Panel title="Blast Vibration Metrics" sub="technical event features · UNVALIDATED" right={readout(last(Q("ppv")), "mm/s", "normal")}>
-          <div className="panel-body">
-            <Legend items={[
-              { label: "ADXL355 PPA · g", color: col("ppa") },
-              { label: "MPU9250 PPA · g", color: col("ppa_mpu9250"), dash: "dashed" },
-              { label: "ADXL355 PPV · mm/s", color: col("ppv") },
-              { label: "MPU9250 PPV · mm/s", color: col("ppv_mpu9250"), dash: "dashed" },
-            ]} />
-            <PanelChart height={232}
-              left={{ name: "g", min: 0, max: ppaMax }}
-              right={{ name: "mm/s", min: 0, max: ppvMax }}
-              series={[
-                { name: "MPU9250 PPA", data: Q("ppa_mpu9250"), color: col("ppa_mpu9250"), width: 1.5, dash: "dashed", opacity: op("ppa_mpu9250") },
-                { name: "ADXL355 PPA", data: Q("ppa"), color: col("ppa"), width: 2.2, z: 3, opacity: op("ppa") },
-                { name: "MPU9250 PPV", data: Q("ppv_mpu9250"), color: col("ppv_mpu9250"), width: 1.5, dash: "dashed", axis: 1, opacity: op("ppv_mpu9250") },
-                { name: "ADXL355 PPV", data: Q("ppv"), color: col("ppv"), width: 2.2, axis: 1, z: 3, opacity: op("ppv") },
-              ]}
-            />
-            <div className="wx-chart-note">PPA/PPV are technical features from uploaded acceleration windows. No regulatory/compliance threshold or field-safety claim is applied.</div>
-          </div>
-        </Panel>
+        {(["ppa", "ppa_mpu9250"].some((q) => Q(q).length > 0)) && (
+          <Panel title="Peak Particle Acceleration (PPA)" sub="event features · UNVALIDATED · sparse samples">
+            <div className="panel-body">
+              <Legend items={[{label:"ADXL355 PPA · g", color:col("ppa")}, {label:"MPU9250 PPA · g", color:col("ppa_mpu9250"), dash:"dashed"}]} />
+              <PanelChart timeRange={chartRange} height={232} left={{name:"g", min:0, max:ppaMax}}
+                series={[
+                  {name:"ADXL355 PPA", data:Q("ppa"), color:col("ppa"), showSymbol:true, symbolSize:6, width:1.6, opacity:op("ppa")},
+                  {name:"MPU9250 PPA", data:Q("ppa_mpu9250"), color:col("ppa_mpu9250"), showSymbol:true, symbolSize:6, dash:"dashed", width:1.6, opacity:op("ppa_mpu9250")},
+                ]} />
+              <div className="wx-chart-note">Discrete blast events; no claim of continuous monitoring or safety compliance.</div>
+            </div>
+          </Panel>
+        )}
+        {(["ppv", "ppv_mpu9250"].some((q) => Q(q).length > 0)) && (
+          <Panel title="Peak Particle Velocity (PPV)" sub="event features · UNVALIDATED · sparse samples">
+            <div className="panel-body">
+              <Legend items={[{label:"ADXL355 PPV · mm/s", color:col("ppv")}, {label:"MPU9250 PPV · mm/s", color:col("ppv_mpu9250"), dash:"dashed"}]} />
+              <PanelChart timeRange={chartRange} height={232} left={{name:"mm/s", min:0, max:ppvMax}}
+                series={[
+                  {name:"ADXL355 PPV", data:Q("ppv"), color:col("ppv"), showSymbol:true, symbolSize:6, width:1.6, opacity:op("ppv")},
+                  {name:"MPU9250 PPV", data:Q("ppv_mpu9250"), color:col("ppv_mpu9250"), showSymbol:true, symbolSize:6, dash:"dashed", width:1.6, opacity:op("ppv_mpu9250")},
+                ]} />
+            </div>
+          </Panel>
+        )}
+        {(["accel_sample_rate", "accel_window_duration"].some((q) => Q(q).length > 0)) && (
+          <Panel title="Accelerometer Acquisition Metadata" sub="technical · sample rate and recording-window duration">
+            <div className="panel-body">
+              <Legend items={[{label:"Sample rate · Hz", color:col("accel_sample_rate")}, {label:"Window duration · s", color:col("accel_window_duration")}]} />
+              <PanelChart timeRange={chartRange} height={232} left={{name:"Hz", min:0}} right={{name:"s", min:0}}
+                series={[
+                  {name:"Sample rate", data:Q("accel_sample_rate"), color:col("accel_sample_rate"), showSymbol:true, symbolSize:6},
+                  {name:"Window duration", data:Q("accel_window_duration"), color:col("accel_window_duration"), showSymbol:true, symbolSize:6, axis:1},
+                ]} />
+              <div className="wx-chart-note">Acquisition metadata, not slope movement or displacement.</div>
+            </div>
+          </Panel>
+        )}
 
-        {est ? (
+        {!operationalReady ? null : est ? (
           <Panel title="Time to Failure" tag="estimate">
             <TimeToFailure estimate={est} />
           </Panel>
@@ -532,27 +763,37 @@ export default function SlopeDetail() {
           </Panel>
         )}
 
-        <Panel title="Slope Velocity & Acceleration" sub="derived from GNSS resultant" right={readout(velNow, "mm/day", velStatus)}>
+        {hasVelocitySeries && (
+        <Panel
+          title="Slope Velocity & Acceleration"
+          sub={operationalReady ? "derived from GNSS resultant" : "derived QA telemetry · UNVALIDATED"}
+          right={readout(velNow, "mm/day", velStatus)}
+        >
           <div className="panel-body">
             <Legend items={[
               { label: "Velocity · mm/day", color: col("velocity") },
               { label: "Acceleration · mm/day²", color: col("acceleration"), dash: "dashed" },
-              { label: "Tertiary creep", color: BAND.bahaya, kind: "box" },
+              ...(operationalReady
+                ? [{ label: "Tertiary creep", color: BAND.bahaya, kind: "box" }]
+                : []),
             ]} />
-            <PanelChart height={232}
+            <PanelChart timeRange={chartRange} height={232}
               left={{ name: "mm/day", min: 0, max: velMax }}
               right={{ name: "mm/day²", min: 0, max: 24 }}
               series={[
                 { name: "Acceleration", data: derived.acceleration, color: col("acceleration"), width: 1.6, dash: "dashed", axis: 1, opacity: op("acceleration") },
                 { name: "Velocity", data: derived.velocity, color: col("velocity"), width: 2.4, z: 3, opacity: op("velocity") },
               ]}
-              bands={[
-                { from: VEL_TH.siaga, to: VEL_TH.bahaya, color: BAND.siaga },
-                { from: VEL_TH.bahaya, to: velMax, color: BAND.bahaya },
-              ]}
+              bands={operationalReady
+                ? [
+                    { from: VEL_TH.siaga, to: VEL_TH.bahaya, color: BAND.siaga },
+                    { from: VEL_TH.bahaya, to: velMax, color: BAND.bahaya },
+                  ]
+                : []}
             />
           </div>
         </Panel>
+        )}
 
         {(weatherRain.length > 0 || weatherTemp.length > 0) && (
           <>
@@ -601,20 +842,20 @@ export default function SlopeDetail() {
             piezometer/soil-moisture berkedalaman di hardware sistem ini),
             jadi panelnya selalu kosong tanpa penjelasan. Diganti jadi
             panel jujur yang menyatakan sensor apa yang BENAR-BENAR ada. */}
-        <Panel title="Sensor Coverage" sub="hardware terpasang">
-          <div className="sensor-coverage">
+        <Panel title="Sensor Coverage" sub="installed hardware">
+          <div className="sensor-coverage" style={{ padding: "12px 18px 14px" }}>
             <div className="sc-row"><span className="sc-dot sc-on" />GNSS RTK (ZED-F9P-15B) — displacement</div>
-            <div className="sc-row"><span className="sc-dot sc-on" />Accelerometer (ADXL355 / MPU9250) — tilt &amp; vibrasi</div>
-            <div className="sc-row"><span className="sc-dot sc-off" />Piezometer / soil moisture — tidak terpasang</div>
-            <div className="sc-row"><span className="sc-dot sc-off" />Rain gauge lapangan — tidak terpasang (curah hujan dari Open-Meteo)</div>
+            <div className="sc-row"><span className="sc-dot sc-on" />Accelerometer (ADXL355 / MPU9250) — tilt &amp; vibration</div>
+            <div className="sc-row"><span className="sc-dot sc-off" />Piezometer / soil moisture — not installed</div>
+            <div className="sc-row"><span className="sc-dot sc-off" />On-site rain gauge — not installed (rainfall provided by Open-Meteo)</div>
           </div>
         </Panel>
 
         {/* Devices di site ini (2026-09-20, baru) */}
         <Panel title="Devices" sub={id}>
-          <div className="sensor-coverage">
-            {!siteDevices && <div className="sc-row">Memuat…</div>}
-            {siteDevices && siteDevices.length === 0 && <div className="sc-row">Belum ada device terdaftar di site ini.</div>}
+          <div className="sensor-coverage" style={{ padding: "12px 18px 14px" }}>
+            {!siteDevices && <div className="sc-row">Loading…</div>}
+            {siteDevices && siteDevices.length === 0 && <div className="sc-row">No devices registered at this site.</div>}
             {siteDevices && siteDevices.map((d) => (
               <div key={d.device_id} className="sc-row">
                 <span className={"sc-dot " + (d.online ? "sc-on" : "sc-off")} />
@@ -631,16 +872,18 @@ export default function SlopeDetail() {
             sama (`series`, semua quantity, tidak difilter) — tidak perlu
             fetch tambahan. */}
         {(Q("rainfall_external").length > 0 || Q("temperature_external").length > 0) && (
+          <div data-b12="B12_SLOPE_DETAIL_WEATHER_FULL_SPAN" style={{ gridColumn: "1 / -1", minWidth: 0 }}>
           <Panel title="External Weather" sub="Open-Meteo">
-            <div className="sensor-coverage">
-              <div className="sc-row">Rainfall: <b>{last(Q("rainfall_external")) ?? "—"} mm</b></div>
-              <div className="sc-row">24h rainfall: <b>{rain24 ?? "—"} mm</b></div>
-              <div className="sc-row">72h rainfall: <b>{rain72 ?? "—"} mm</b></div>
-              <div className="sc-row">Temperature: <b>{last(Q("temperature_external")) ?? "—"} °C</b></div>
-              <div className="sc-row">Humidity: <b>{last(Q("humidity_external")) ?? "—"} %</b></div>
+            <div className="sensor-coverage" style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 22px", alignItems: "center" }} data-b12="B12_SLOPE_BOTTOM_COMPACT_V1">
+              <div className="sc-row">Rainfall: <b>{formatWeather(last(Q("rainfall_external")))} mm</b></div>
+              <div className="sc-row">24h rainfall: <b>{formatWeather(rain24)} mm</b></div>
+              <div className="sc-row">72h rainfall: <b>{formatWeather(rain72)} mm</b></div>
+              <div className="sc-row">Temperature: <b>{formatWeather(last(Q("temperature_external")))} °C</b></div>
+              <div className="sc-row">Humidity: <b>{formatWeather(last(Q("humidity_external")), 0)} %</b></div>
               <div className="sc-row" style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 4 }}>Weather data by Open-Meteo.com (CC BY 4.0)</div>
             </div>
           </Panel>
+          </div>
         )}
       </div>
       </>)}

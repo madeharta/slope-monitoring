@@ -1,13 +1,27 @@
+"""CRUD user — admin-only, 2026-09-20 baru (sebelumnya TIDAK ADA cara
+membuat/mengelola user lewat aplikasi, cuma seed SQL manual).
+
+DELETE = soft-disable (`disabled_at`), bukan hard delete — mengikuti
+desain kolom yang sudah ada sejak migrasi 005 ("never hard-delete a
+user (audit trail integrity)").
+"""
+
 from __future__ import annotations
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+
 from apps.api.dependencies import get_db_pool, require_role
 from common.audit import AuditLog
 from common.errors import AppError, ErrorCode
 from common.security import TokenPayload
 from services.auth_service.user_service import UserRepository
+
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
+
 _VALID_ROLES = ("viewer", "operator", "admin")
+
+
 @router.get("")
 async def list_users(request: Request, user: TokenPayload = Depends(require_role("admin"))) -> dict:
     pool = get_db_pool(request)
@@ -24,10 +38,14 @@ async def list_users(request: Request, user: TokenPayload = Depends(require_role
             for u in users
         ],
     }
+
+
 class CreateUserRequest(BaseModel):
     email: str
     password: str
     role: str
+
+
 @router.post("")
 async def create_user(
     body: CreateUserRequest, request: Request, actor: TokenPayload = Depends(require_role("admin")),
@@ -36,6 +54,7 @@ async def create_user(
         raise AppError(ErrorCode.VALIDATION_ERROR, f"role harus salah satu dari: {', '.join(_VALID_ROLES)}")
     if len(body.password) < 8:
         raise AppError(ErrorCode.VALIDATION_ERROR, "password minimal 8 karakter")
+
     pool = get_db_pool(request)
     new_user_id = await UserRepository(pool).create(body.email, body.password, body.role)
     await AuditLog(pool).record(
@@ -43,44 +62,66 @@ async def create_user(
         new_value={"role": body.role},
     )
     return {"ok": True, "user_id": new_user_id}
+
+
 class UpdateUserRoleRequest(BaseModel):
     role: str
+
+
 @router.put("/{user_id}/role")
 async def update_user_role(
     user_id: str, body: UpdateUserRoleRequest, request: Request, actor: TokenPayload = Depends(require_role("admin")),
 ) -> dict:
     if body.role not in _VALID_ROLES:
         raise AppError(ErrorCode.VALIDATION_ERROR, f"role harus salah satu dari: {', '.join(_VALID_ROLES)}")
+
     pool = get_db_pool(request)
     repo = UserRepository(pool)
+
+    # Proteksi: jangan sampai admin terakhir kehilangan role admin-nya
+    # sendiri (mengunci semua orang keluar dari fungsi admin).
     if user_id == actor.sub and body.role != "admin":
         current = await repo.get_by_id(user_id)
         if current and current["role"] == "admin":
             active_admins = await repo.count_active_admins()
             if active_admins <= 1:
                 raise AppError(ErrorCode.VALIDATION_ERROR, "tidak bisa menurunkan role admin terakhir yang aktif — daftarkan admin lain dulu")
+
     await repo.update_role(user_id, body.role)
     await AuditLog(pool).record(
         actor_user_id=actor.sub, action="user.update_role", target_type="user", target_id=user_id,
         new_value={"role": body.role},
     )
     return {"ok": True}
+
+
 @router.delete("/{user_id}")
 async def disable_user(
     user_id: str, request: Request, actor: TokenPayload = Depends(require_role("admin")),
 ) -> dict:
+    """Soft-disable, bukan hard delete (lihat docstring modul)."""
     if user_id == actor.sub:
         raise AppError(ErrorCode.VALIDATION_ERROR, "tidak bisa menonaktifkan akun sendiri")
+
     pool = get_db_pool(request)
     repo = UserRepository(pool)
+
     target = await repo.get_by_id(user_id)
     if target and target["role"] == "admin":
         active_admins = await repo.count_active_admins()
         if active_admins <= 1:
             raise AppError(ErrorCode.VALIDATION_ERROR, "tidak bisa menonaktifkan admin terakhir yang aktif")
+
+    # Audit dulu, baru disable — sama seperti pola delete_site/delete_device
+    # (trigger validate_audit_log_target butuh user_id/email masih valid
+    # saat audit di-INSERT; user yang di-disable TETAP ada barisnya,
+    # jadi sebenarnya urutan di sini tidak sekritis site/device delete,
+    # tapi dijaga konsisten dengan pola yang sama demi keseragaman).
     await AuditLog(pool).record(actor_user_id=actor.sub, action="user.disable", target_type="user", target_id=user_id)
     await repo.disable(user_id)
     return {"ok": True}
+
+
 @router.post("/{user_id}/enable")
 async def enable_user(
     user_id: str, request: Request, actor: TokenPayload = Depends(require_role("admin")),

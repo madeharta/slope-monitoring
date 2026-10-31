@@ -1,0 +1,48 @@
+# MAGRIS B15 — Biznet Weather Underground staging overlay
+# Usage:
+# docker compose -f docker-compose.yml \
+#   -f deploy/biznet/compose.weather.yml <command>
+#
+# Required deployment environment:
+# WU_API_KEY, WU_STATION_ID
+#
+# No credentials should be committed to Git.
+
+services:
+  api:
+    environment:
+      WU_STATION_ID: ${WU_STATION_ID:?WU_STATION_ID is required}
+
+  wu-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        DB_PASSWORD="$$(cat /run/secrets/api_db_password)"
+        export DB_PASSWORD
+        exec "$$@"
+      - magris-wu-init
+    command:
+      - python
+      - -m
+      - services.weather_service.wu_collector
+    secrets:
+      - api_db_password
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-slope_iot}
+      DB_USER: ${DB_USER:-slope}
+      WU_API_KEY: ${WU_API_KEY:?WU_API_KEY is required}
+      WU_STATION_ID: ${WU_STATION_ID:?WU_STATION_ID is required}
+      WU_POLL_INTERVAL_SECONDS: "900"
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  api_db_password:
+    file: /etc/landslidemon/secrets/api_db_password

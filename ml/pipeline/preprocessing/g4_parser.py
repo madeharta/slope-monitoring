@@ -41,7 +41,14 @@ def parse_gnss_csv(raw_csv: str) -> list[tuple[str, datetime, bytes]]:
                 f"4G gnss line {line_no}: bad timestamp_utc: {exc}"
             ) from exc
         raw = _decode_ubx(payload, f"4G gnss line {line_no}")
-        out.append((device_id, ts, raw))
+        # CSV labels are retained in the immutable original upload. The GNSS
+        # measurement epoch comes from the validated UBX-RXM-RAWX payload.
+        from ml.pipeline.preprocessing.gnss_rawx_time import canonical_rawx_utc
+        try:
+            observed_utc = canonical_rawx_utc(raw, ts)
+        except ValueError as exc:
+            raise InvalidCsvError(f"4G gnss line {line_no}: {exc}") from exc
+        out.append((device_id, observed_utc, raw))
     if not out:
         raise InvalidCsvError("4G gnss CSV contained a header but zero data rows")
     return out
@@ -58,7 +65,8 @@ def parse_accel_csv_single_auxiliary_rawx(raw_csv: str) -> G4BlastAccel:
         raise InvalidCsvError(f"4G accel CSV missing required column(s): {sorted(required - fields)}")
     samples: list[CanonicalAccelSample] = []
     rawx_entries: list[tuple[str, datetime, bytes]] = []
-    for line_no, row in enumerate(reader, start=2):
+    rows = list(reader)
+    for line_no, row in enumerate(rows, start=2):
         try:
             ts = datetime.strptime(row["timestamp_utc"], "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
             payload = (row.get("gnss_raw_payload_base64") or "").strip()
@@ -88,6 +96,9 @@ def parse_accel_csv_single_auxiliary_rawx(raw_csv: str) -> G4BlastAccel:
             "4G accel requires exactly one auxiliary gnss_raw_payload_base64 row; "
             f"found {len(rawx_entries)}"
         )
+    final_payload = (rows[-1].get("gnss_raw_payload_base64") or "").strip()
+    if final_payload in {"", "0"}:
+        raise InvalidCsvError("4G accel auxiliary RAWX must be in the final data row")
     return G4BlastAccel(samples=samples, auxiliary_rawx=rawx_entries[0])
 def _decode_ubx(payload: str, context: str) -> bytes:
     try:

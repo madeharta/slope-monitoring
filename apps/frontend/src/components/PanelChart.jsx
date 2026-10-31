@@ -19,6 +19,7 @@ const TXT = "#8a8b95", GRID = "#1c1c22", RULE = "#26262d", AXLBL = "#7c7d87";
 export default function PanelChart({
   height = 260, series = [], left = null, right = null,
   bands = [], hlines = [], vlines = [],
+  axisFontSize = 9.5, xTimeMode = "clock", timeRange = null,
 }) {
   const ref = useRef(null);
   const chartRef = useRef(null);
@@ -40,9 +41,11 @@ export default function PanelChart({
 
     const axisBase = (a) => ({
       type: "value", name: a?.name, min: a?.min, max: a?.max,
-      nameTextStyle: { color: TXT, fontSize: 9.5, align: "left" }, nameGap: 8,
-      axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
-      axisLabel: { color: AXLBL, fontSize: 9.5, fontFamily: "ui-monospace,monospace" },
+      nameTextStyle: { color: TXT, fontSize: 10, align: "center" },
+      nameLocation: "middle", nameGap: 44,
+      axisLine: { show: true, lineStyle: { color: RULE } },
+      axisTick: { show: true }, splitLine: { show: true, lineStyle: { color: GRID, opacity: 0.2 } },
+      axisLabel: { color: AXLBL, fontSize: axisFontSize, fontFamily: "ui-monospace,monospace" },
     });
     const yAxis = [left ? { ...axisBase(left), position: "left" } : { show: false }];
     yAxis.push(right ? { ...axisBase(right), position: "right" } : { show: false, position: "right" });
@@ -99,22 +102,58 @@ export default function PanelChart({
       if (mlData[i].length) s.markLine = { silent: true, symbol: "none", data: mlData[i] };
     });
 
+    const firstTime = series.flatMap((s) => (s.data || []).map((p) => Date.parse(p?.[0])))
+      .filter(Number.isFinite).reduce((min, v) => Math.min(min, v), Infinity);
+    const lastTime = series.flatMap((s) => (s.data || []).map((p) => Date.parse(p?.[0])))
+      .filter(Number.isFinite).reduce((max, v) => Math.max(max, v), -Infinity);
+    const elapsedMode = xTimeMode === "elapsed" && Number.isFinite(firstTime) && Number.isFinite(lastTime);
+    const shortWindow = elapsedMode && (lastTime - firstTime) < 2000;
+    const wib = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jakarta", year: "numeric", month: "short", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    });
+    const fromMs = timeRange?.from ? Date.parse(timeRange.from) : NaN;
+    const toMs = timeRange?.to ? Date.parse(timeRange.to) : NaN;
+    const bounded = Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs < toMs;
+    const wibTick = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jakarta", day: "2-digit", month: "short",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
     c.setOption({
       animation: false, backgroundColor: "transparent",
-      grid: { left: 54, right: right ? 52 : 20, top: 16, bottom: 24 },
+      grid: { left: 65, right: right ? 72 : 25, top: 31, bottom: 61, containLabel: false },
       xAxis: {
-        type: "time", axisLine: { lineStyle: { color: RULE } },
-        axisLabel: { color: TXT, fontSize: 9.5, hideOverlap: true, fontFamily: "ui-monospace,monospace" },
+        type: "time", min: bounded ? fromMs : undefined, max: bounded ? toMs : undefined,
+        name: elapsedMode ? "Elapsed time (s)" : "Date & time (WIB)",
+        nameLocation: "middle", nameGap: 42,
+        nameTextStyle: { color: TXT, fontSize: 11 },
+        axisLine: { show: true, lineStyle: { color: RULE } },
+        axisLabel: {
+          color: TXT, fontSize: axisFontSize, hideOverlap: true, fontFamily: "ui-monospace,monospace",
+          formatter: elapsedMode ? (value) => {
+            const delta = value - firstTime;
+            return shortWindow ? `${Math.round(delta)} ms` : `${(delta / 1000).toFixed(2)} s`;
+          } : (value) => wibTick.format(new Date(value)),
+        },
         splitLine: { show: true, lineStyle: { color: GRID } }, axisTick: { show: false },
       },
       yAxis,
       series: es,
       tooltip: {
         trigger: "axis", backgroundColor: "rgba(9,9,11,.95)", borderColor: RULE,
-        textStyle: { color: "#e9e9ee", fontSize: 12 }, axisPointer: { type: "cross", lineStyle: { color: RULE }, crossStyle: { color: RULE } },
+        textStyle: { color: "#e9e9ee", fontSize: 12 },
+        ...(elapsedMode ? { formatter: (items) => {
+          if (!items?.length) return "";
+          const timestamp = Number(items[0].axisValue);
+          const at = Number.isFinite(timestamp) ? `${wib.format(new Date(timestamp))} WIB` : "Time unavailable";
+          const delta = Number.isFinite(timestamp) ? ((timestamp - firstTime) / 1000).toFixed(3) : "—";
+          const values = items.map((i) => `${i.marker} ${i.seriesName}: ${i.value?.[1] == null ? "—" : Number(i.value[1]).toFixed(3)} mm/s`).join("<br/>");
+          return `${at}<br/>Elapsed ${delta} s<br/>${values}`;
+        }} : {}),
+        axisPointer: { type: "cross", lineStyle: { color: RULE }, crossStyle: { color: RULE } },
       },
     }, true);
-  }, [series, left, right, bands, hlines, vlines, variant]);
+  }, [series, left, right, bands, hlines, vlines, variant, axisFontSize, xTimeMode, timeRange?.from, timeRange?.to]);
 
   return <div ref={ref} style={{ width: "100%", height }} />;
 }

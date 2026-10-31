@@ -1,22 +1,38 @@
+// Halaman Sites — daftar semua site + CRUD (2026-09-20: Update & Delete
+// ditambahkan, sebelumnya cuma Read+Create-lewat-halaman-lain). Read
+// masih reuse /api/overview (tidak ada endpoint list-sites baru), tapi
+// Update/Delete pakai endpoint baru PUT/DELETE /api/v1/sites/:id.
+
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOverview } from "../api";
 import { useAuth } from "../context/AuthContext.jsx";
+
 export default function Sites() {
   const navigate = useNavigate();
   const { authFetch, auth } = useAuth();
   const [slopes, setSlopes] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState(null);
+  const [editing, setEditing] = useState(null); // site_id sedang diedit, atau null
   const [editDraft, setEditDraft] = useState({ name: "", lat: "", lon: "" });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+
   const isAdmin = auth?.role === "admin";
+
   function reload() {
-    getOverview().then((o) => setSlopes(o.slopes || [])).catch(() => {});
+    setError(null);
+    setSlopes(null);
+    getOverview(authFetch)
+      .then((o) => setSlopes(o.slopes || []))
+      .catch((err) => {
+        setError(`Failed to load sites: ${err.message}`);
+        setSlopes([]);
+      });
   }
   useEffect(() => { reload(); }, []);
+
   const filtered = useMemo(() => {
     if (!slopes) return null;
     return slopes.filter((s) => {
@@ -25,11 +41,13 @@ export default function Sites() {
       return true;
     });
   }, [slopes, statusFilter, search]);
+
   function startEdit(s) {
     setEditing(s.site_id);
     setEditDraft({ name: s.name, lat: s.lat, lon: s.lon });
     setError(null);
   }
+
   async function saveEdit(site_id) {
     setBusy(site_id);
     setError(null);
@@ -47,46 +65,50 @@ export default function Sites() {
       setBusy(null);
     }
   }
+
   async function del(site_id) {
-    if (!window.confirm(`Hapus site "${site_id}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!window.confirm(`Delete site "${site_id}"? This action cannot be undone.`)) return;
     setBusy(site_id);
     setError(null);
     try {
       const r = await authFetch(`/api/v1/sites/${site_id}`, { method: "DELETE" });
       const body = await r.json();
-      if (!r.ok) { setError(body.detail); return; }
+      if (!r.ok) { setError(body.detail); return; } // pesan sudah jelas dari backend kalau masih ada device
       reload();
     } finally {
       setBusy(null);
     }
   }
+
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Sites</h1>
-        {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => navigate("/admin/sites")}>+ Site Baru</button>}
+        {isAdmin && <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => navigate("/admin/sites")}>+ New Site</button>}
       </div>
+
       <div className="panel" style={{ maxWidth: 1050, margin: "0 auto", padding: 20 }}>
         <div className="table-filters">
-          <input placeholder="Cari nama/site ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input placeholder="Search name/site ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">Semua status</option>
+            <option value="all">All statuses</option>
             <option value="normal">Normal</option>
-            <option value="siaga">Siaga</option>
-            <option value="bahaya">Bahaya</option>
+            <option value="siaga">Warning</option>
+            <option value="bahaya">Danger</option>
           </select>
           <span className="table-total">{filtered ? filtered.length : 0} / {slopes ? slopes.length : 0} site</span>
         </div>
+
         {error && <div className="admin-error" style={{ marginBottom: 12 }}>{error}</div>}
-        {!slopes && <div className="loading">Memuat…</div>}
-        {filtered && filtered.length === 0 && <div className="sc-row">Tidak ada site yang cocok filter.</div>}
+        {!slopes && <div className="loading">Loading…</div>}
+        {filtered && filtered.length === 0 && <div className="sc-row">No sites match the filters.</div>}
         {filtered && filtered.length > 0 && (
           <table className="devtable">
             <thead>
               <tr>
-                <th>Site ID</th><th>Nama</th><th>Status</th><th>Lat/Lon</th><th>Reading terakhir</th>
-                {isAdmin && <th>Aksi</th>}
+                <th>Site ID</th><th>Name</th><th>Status</th><th>Lat/Lon</th><th>Latest reading</th>
+                {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -106,8 +128,8 @@ export default function Sites() {
                       </td>
                       <td>{s.reading ? `${s.reading.value} ${s.reading.unit}` : "—"}</td>
                       <td>
-                        <button className="devlink" disabled={busy === s.site_id} onClick={() => saveEdit(s.site_id)}>Simpan</button>{" "}
-                        <button className="devlink" onClick={() => setEditing(null)}>Batal</button>
+                        <button className="devlink" disabled={busy === s.site_id} onClick={() => saveEdit(s.site_id)}>Save</button>{" "}
+                        <button className="devlink" onClick={() => setEditing(null)}>Cancel</button>
                       </td>
                     </>
                   ) : (
@@ -122,7 +144,7 @@ export default function Sites() {
                       {isAdmin && (
                         <td>
                           <button className="devlink" onClick={() => startEdit(s)}>Edit</button>{" "}
-                          <button className="devlink" style={{ color: "var(--bahaya)" }} disabled={busy === s.site_id} onClick={() => del(s.site_id)}>Hapus</button>
+                          <button className="devlink" style={{ color: "var(--bahaya)" }} disabled={busy === s.site_id} onClick={() => del(s.site_id)}>Delete</button>
                         </td>
                       )}
                     </>

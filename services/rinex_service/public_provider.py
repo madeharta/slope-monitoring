@@ -73,6 +73,7 @@ class PublicRINEXNavigationProvider:
         self._client = client
 
     def fetch(self, observed_at: datetime) -> CachedRINEXArtifact:
+        # Derive the remote product from observation UTC, never server-local time.
         timestamp = _as_utc(observed_at)
         current_url = self._validate_url(self.source.url_for(timestamp))
         owns_client = self._client is None
@@ -93,6 +94,7 @@ class PublicRINEXNavigationProvider:
                             f"{self.source.name} download failed with HTTP {response.status_code}"
                         )
                     content = self._read_bounded(response)
+                    # Reject portal/login/error pages before they can enter the content-addressed cache.
                     if self._looks_like_html(content, response.headers.get("content-type", "")):
                         raise PublicRINEXDownloadError(
                             f"{self.source.name} returned HTML instead of a RINEX navigation artifact"
@@ -104,6 +106,7 @@ class PublicRINEXNavigationProvider:
                         raise PublicRINEXDownloadError(
                             f"{self.source.name} returned invalid RINEX content: {exc}"
                         ) from exc
+                    # Content classification is authoritative; filename suffixes are not trusted.
                     if metadata.data_type != "navigation":
                         raise PublicRINEXDownloadError(
                             f"{self.source.name} returned RINEX {metadata.data_type}, expected navigation"

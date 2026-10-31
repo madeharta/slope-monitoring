@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 const DEVICE_KEYS = [
-  { key: "periodic_upload_s", label: "Interval upload (detik)", type: "number" },
+  { key: "periodic_upload_s", label: "Upload interval (seconds)", type: "number" },
   { key: "firmware_version", label: "Target firmware version", type: "text" },
   { key: "threshold_g", label: "Threshold accel (g)", type: "number" },
   { key: "time_record_ms", label: "Durasi rekaman ledakan (ms)", type: "number" },
@@ -33,7 +33,7 @@ export default function Settings() {
   }, [device, authFetch]);
   async function save(key, value) {
     if (!canEdit) {
-      setMessage("Perlu role operator/admin untuk mengubah config.");
+      setMessage("Operator or administrator role is required to change configuration.");
       return;
     }
     setSaving(key);
@@ -45,7 +45,7 @@ export default function Settings() {
         body: JSON.stringify({ config_key: key, config_value: value }),
       });
       const body = await r.json();
-      if (!r.ok) { setMessage(body.detail || "Gagal menyimpan."); return; }
+      if (!r.ok) { setMessage(body.detail || "Failed to save."); return; }
       const next = key === "firmware_version" ? value : Number(value);
       setConfig((c) => ({ ...c, [key]: next }));
       setMessage(`"${key}" tersimpan.`);
@@ -55,7 +55,7 @@ export default function Settings() {
   }
   async function saveBattery(deviceId, key, value) {
     if (!canEdit) {
-      setMessage("Perlu role operator/admin untuk mengubah kalibrasi baterai.");
+      setMessage("Operator or administrator role is required to change battery calibration.");
       return;
     }
 
@@ -68,10 +68,10 @@ export default function Settings() {
         body: JSON.stringify({ config_key: key, config_value: Number(value) }),
       });
       const body = await r.json();
-      if (!r.ok) { setMessage(body.detail || "Gagal menyimpan."); return; }
+      if (!r.ok) { setMessage(body.detail || "Failed to save."); return; }
       const field = key === "battery_cal_m" ? "m" : "c";
       setConfig((c) => ({ ...c, battery_cal: { ...(c.battery_cal || {}), [deviceId]: { ...(c.battery_cal?.[deviceId] || {}), [field]: Number(value) } } }));
-      setMessage(`Kalibrasi baterai ${deviceId} tersimpan.`);
+      setMessage(`Battery calibration ${deviceId} tersimpan.`);
     } finally {
       setSaving(null);
     }
@@ -79,20 +79,20 @@ export default function Settings() {
   return (
     <div className="l2 pgdoc2-page settings-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
-        <h1 style={{ fontSize: 18, fontWeight: 650 }}>Settings — Konfigurasi Device</h1>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
+        <h1 style={{ fontSize: 18, fontWeight: 650 }}>Settings — Device Configuration</h1>
       </div>
       <div className="pgdoc2-card settings-card">
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>1. Pilih site</label>
+          <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>1. Select site</label>
           <select value={site} onChange={(e) => { setSite(e.target.value); setDevice(""); }} style={{ minWidth: 240 }}>
-            <option value="">— pilih site —</option>
+            <option value="">— select site —</option>
             {sites.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         {site && (
           <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>2. Pilih device</label>
+            <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>2. Select device</label>
             <div style={{ display: "flex", gap: 8 }}>
               {devicesAtSite.map((d) => (
                 <button key={d.device_id} className={"admin-btn" + (device === d.device_id ? " admin-btn-primary" : "")} onClick={() => setDevice(d.device_id)}>{d.device_id}</button>
@@ -110,8 +110,8 @@ export default function Settings() {
             </div>
             <div className="settings-message" style={{ marginTop: 12 }}>
               <strong>Blast trigger configuration</strong><br />
-              <code>TriggerStart</code> dan <code>TimeOutTrigger</code> adalah konfigurasi level BASE/site.{" "}
-              Gunakan menu{" "}
+              <code>TriggerStart</code> dan <code>TimeOutTrigger</code> are BASE/site-level configuration settings.{" "}
+              Use the{" "}
               <button
                 type="button"
                 className="pgdoc-link"
@@ -119,9 +119,9 @@ export default function Settings() {
               >
                 Blast Control
               </button>{" "}
-              agar write tidak salah diarahkan ke rover.
+              to avoid sending configuration writes to the wrong rover.
             </div>
-            <label style={{ fontSize: 13, fontWeight: 600, display: "block", margin: "18px 0 6px" }}>4. Kalibrasi baterai site</label>
+            <label style={{ fontSize: 13, fontWeight: 600, display: "block", margin: "18px 0 6px" }}>4. Site battery calibration</label>
             <div className="admin-form">
               {Object.entries(config.battery_cal || {}).map(([deviceId, cal]) => (
                 <div key={deviceId} className="settings-battery-row">
@@ -152,7 +152,7 @@ function SettingRow({ label, value, onSave, saving, type = "number", compact = f
         onChange={(e) => setDraft(e.target.value)}
       />
       <button className="admin-btn settings-save" onClick={() => onSave(draft)} disabled={saving}>
-        {saving ? "…" : "Simpan"}
+        {saving ? "…" : "Save"}
       </button>
     </label>
   );

@@ -190,12 +190,16 @@ class CanonicalizationService:
                     await position_repo.write_rtk_direct(site_id=site_id, sample=sample, source_file=file_name)
 
         baselines = {}
-        for rover_id in {sample.device_id for sample in rows}:
+        rover_rows = [
+            sample for sample in rows
+            if sample.role.value == "rover"
+        ]
+        for rover_id in {sample.device_id for sample in rover_rows}:
             try:
                 baselines[rover_id] = await self._rover_baselines.get(rover_id)
             except NotFoundError:
                 logger.warning("approved rover baseline missing for %s; no deformation emitted", rover_id)
-        for sample in rows:
+        for sample in rover_rows:
             baseline = baselines.get(sample.device_id)
             if (
                 baseline is None

@@ -67,7 +67,15 @@ def test_real_4g_fixture_has_nominal_ordered_accel_window():
 
 def test_real_lora_fixture_has_nominal_ordered_accel_window():
     raw = (ROOT / "tests/fixtures/itb_real_data/lora_accel_rtk.csv").read_text()
-    samples = lora_parser.parse_accel_csv(raw)
+    # Historical v1.5 fixture: test-only column adapter.
+    # Preserve all 506 data rows, timestamps, accelerations and status values.
+    assert raw.count("gnss_fix_type,h_acc_m") == 1
+    adapted = raw.replace(
+        "gnss_fix_type,h_acc_m",
+        "rtk_status,h_acc_m",
+        1,
+    )
+    samples = lora_parser.parse_accel_csv(adapted)
     q = analyze_accel_window(samples)
     assert q.quality_gate_status == "degraded"
     assert "sample_rate_outside_nominal_tolerance" in q.reasons

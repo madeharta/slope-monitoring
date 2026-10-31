@@ -15,15 +15,20 @@ import Users from "./pages/Users.jsx";
 import Uploads from "./pages/Uploads.jsx";
 import MFAEnroll from "./pages/MFAEnroll.jsx";
 import PPK from "./pages/PPK.jsx";
+import BaseReferences from "./pages/BaseReferences.jsx";
 import BlastControl from "./pages/BlastControl.jsx";
 import SensorMonitoring from "./pages/SensorMonitoring.jsx";
+import WeatherStation from "./pages/WeatherStation.jsx";
 import RequireAuth from "./context/RequireAuth.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 function AuthenticatedApp() {
   const connect = useStore((s) => s.connect);
+  const disconnect = useStore((s) => s.disconnect);
+  const { authFetch } = useAuth();
   useEffect(() => {
-    connect();
-  }, [connect]);
+    connect(authFetch);
+    return () => disconnect();
+  }, [connect, disconnect, authFetch]);
   return (
     <div className="app">
       <div className="stage">
@@ -40,8 +45,11 @@ function AuthenticatedApp() {
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/uploads" element={<Uploads />} />
           <Route path="/ppk" element={<PPK />} />
+          <Route path="/base-references" element={<BaseReferences />} />
             <Route path="/blast" element={<BlastControl />} />
             <Route path="/sensors" element={<SensorMonitoring />} />
+            <Route path="/weather" element={<WeatherStation />} />
+            <Route path="/weather/:metricSlug" element={<WeatherStation />} />
         </Routes>
       </div>
       <TopBar />

@@ -190,14 +190,35 @@ class RTKLibPPKEngine(PPKEngine):
         raise PPKSolveError("single-epoch solve() is deprecated; use solve_window() with an observation timestamp")
 
     def _convert_to_rinex(self, ubx_path: Path, out_dir: Path, label: str) -> Path:
-        args, obs_path = build_convbin_command(self._convbin, ubx_path, out_dir, label)
+        args, obs_path = build_convbin_command(
+            self._convbin, ubx_path, out_dir, label
+        )
+
         result = self._run_subprocess(
             args,
             timeout=30,
             step=f"convbin ({label})",
         )
-        if result.returncode != 0 or not obs_path.exists() or obs_path.stat().st_size == 0:
-            raise PPKSolveError(f"convbin failed for {label}: {result.stderr.strip()}")
+
+        obs_exists = obs_path.is_file()
+        obs_bytes = obs_path.stat().st_size if obs_exists else 0
+
+        if result.returncode != 0 or obs_bytes == 0:
+            if result.returncode != 0:
+                reason = "CONVBIN_EXIT_NONZERO"
+            elif not obs_exists:
+                reason = "RINEX_OBS_MISSING"
+            else:
+                reason = "RINEX_OBS_EMPTY"
+
+            raise PPKSolveError(
+                f"convbin failed for {label}: "
+                f"reason={reason}; "
+                f"returncode={result.returncode}; "
+                f"obs_exists={obs_exists}; "
+                f"obs_bytes={obs_bytes}"
+            )
+
         return obs_path
 
     def _prepare_navigation(

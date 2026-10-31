@@ -1,6 +1,18 @@
+// Enrollment MFA — SENGAJA tanpa QR code (butuh library tambahan). Cukup
+// tampilkan secret sebagai teks yang bisa di-copy, user masukkan manual
+// ke authenticator app lewat opsi "Enter a setup key" / "Masukkan kode
+// manual" (ada di SEMUA app authenticator standar — Google Authenticator,
+// Authy, 1Password, dll, tidak perlu scan kamera).
+//
+// Alur 2 langkah:
+//   1. POST /auth/mfa/enroll -> tampilkan secret, user salin ke app-nya
+//   2. User masukkan 6 digit kode dari app -> POST /auth/mfa/verify
+//      -> sukses = enrollment selesai
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+
 export default function MFAEnroll() {
   const { authFetch } = useAuth();
   const navigate = useNavigate();
@@ -10,13 +22,14 @@ export default function MFAEnroll() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+
   async function startEnroll() {
     setBusy(true);
     setError(null);
     try {
       const r = await authFetch("/api/v1/auth/mfa/enroll", { method: "POST" });
       const body = await r.json();
-      if (!r.ok) throw new Error(body.detail || "Gagal memulai enrollment MFA");
+      if (!r.ok) throw new Error(body.detail || "Failed to start MFA enrollment");
       setSecret(body.secret);
       setStep(2);
     } catch (err) {
@@ -25,6 +38,7 @@ export default function MFAEnroll() {
       setBusy(false);
     }
   }
+
   async function confirmCode(e) {
     e.preventDefault();
     setBusy(true);
@@ -44,21 +58,24 @@ export default function MFAEnroll() {
       setBusy(false);
     }
   }
+
   function copySecret() {
     navigator.clipboard?.writeText(secret);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
   return (
     <div className="l2 pg-page">
       <div className="pg-header">
-        <button className="pg-back" onClick={() => navigate(-1)} aria-label="Kembali">←</button>
-        <h1>Aktifkan Verifikasi Dua Langkah (MFA)</h1>
+        <button className="pg-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
+        <h1>Enable Two-Factor Authentication (MFA)</h1>
       </div>
+
       {step === 1 && (
         <div className="panel pg-card" style={{ maxWidth: 480 }}>
           <p className="pg-body">
-            Wajib untuk aksi berisiko tinggi seperti memicu ledakan dari dashboard.
+            Required for high-risk actions such as initiating a blast from the dashboard.
             Butuh aplikasi authenticator di HP Anda (Google Authenticator, Authy, atau sejenisnya — gratis).
           </p>
           {error && <div className="login-error" role="alert" style={{ marginTop: 10 }}>{error}</div>}
@@ -67,11 +84,12 @@ export default function MFAEnroll() {
           </button>
         </div>
       )}
+
       {step === 2 && (
         <div className="panel pg-card" style={{ maxWidth: 480 }}>
-          <h2>Langkah 1 — Masukkan kode ini ke app Anda</h2>
+          <h2>Step 1 — Enter this code in your authenticator app</h2>
           <p className="pg-body">
-            Buka app authenticator → tambah akun baru → pilih <b>"Masukkan kode setup manual"</b> (bukan scan QR)
+            Open your authenticator app → add an account → select <b>"Enter a manual setup key"</b> (do not scan a QR code)
             → tempel kode di bawah ini:
           </p>
           <div
@@ -86,7 +104,8 @@ export default function MFAEnroll() {
           <button className="pg-back" style={{ width: "auto", padding: "6px 12px", fontSize: 12 }} onClick={copySecret}>
             {copied ? "Tersalin ✓" : "Salin kode"}
           </button>
-          <h2 style={{ marginTop: 20 }}>Langkah 2 — Masukkan 6 digit dari app</h2>
+
+          <h2 style={{ marginTop: 20 }}>Step 2 — Enter the six-digit code from your app</h2>
           <form onSubmit={confirmCode} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
             <input
               type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} placeholder="000000"
@@ -101,11 +120,12 @@ export default function MFAEnroll() {
           </form>
         </div>
       )}
+
       {step === 3 && (
         <div className="panel pg-card" style={{ maxWidth: 480, borderColor: "var(--ok)" }}>
-          <h2>MFA aktif ✓</h2>
+          <h2>MFA enabled ✓</h2>
           <p className="pg-body">
-            Login berikutnya akan minta kode dari app Anda untuk aksi berisiko tinggi.
+            Future high-risk actions will require the authenticator code.
           </p>
           <button className="login-submit" style={{ marginTop: 14 }} onClick={() => navigate("/")}>
             Selesai

@@ -13,6 +13,7 @@ export default function BlastControl() {
   const [siteId, setSiteId] = useState("");
   const [baseId, setBaseId] = useState("");
   const [config, setConfig] = useState(null);
+  const [triggerStatus, setTriggerStatus] = useState(null);
   const [timeoutMinutes, setTimeoutMinutes] = useState("");
 
   const [busy, setBusy] = useState(false);
@@ -45,6 +46,7 @@ export default function BlastControl() {
     if (!siteId) {
       setBaseId("");
       setConfig(null);
+      setTriggerStatus(null);
       return;
     }
 
@@ -82,11 +84,42 @@ export default function BlastControl() {
     setTimeoutMinutes(String(nextConfig.TimeOutTrigger ?? ""));
   }
 
+  async function refreshTriggerStatus(targetBaseId = baseId) {
+    if (!targetBaseId) return;
+    const response = await authFetch(
+      `/api/v1/blast/trigger-status?base_id=${encodeURIComponent(targetBaseId)}`
+    );
+    if (!response.ok) throw new Error(`Trigger status HTTP ${response.status}`);
+    const body = await response.json();
+    if (targetBaseId === baseId) setTriggerStatus(body);
+  }
+
+  useEffect(() => {
+    if (!baseId) return;
+    setTriggerStatus(null);
+    let active = true;
+    async function update() {
+      try {
+        const response = await authFetch(
+          `/api/v1/blast/trigger-status?base_id=${encodeURIComponent(baseId)}`
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json();
+        if (active) setTriggerStatus(body);
+      } catch (err) {
+        if (active) setTriggerStatus({ error: err.message });
+      }
+    }
+    update();
+    const timer = window.setInterval(update, 10000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [baseId, authFetch]);
+
   useEffect(() => {
     if (!baseId) return;
 
     refreshConfig(baseId).catch((err) => {
-      setError(err?.message || "Gagal membaca config BASE.");
+      setError(err?.message || "Failed to read BASE configuration.");
     });
   }, [baseId]);
 
@@ -96,7 +129,7 @@ export default function BlastControl() {
     const timeout = Number(timeoutMinutes);
 
     if (!Number.isInteger(timeout) || timeout <= 0) {
-      setError("TimeOutTrigger harus bilangan bulat lebih dari 0 menit.");
+      setError("TimeOutTrigger must be an integer greater than zero minutes.");
       return;
     }
 
@@ -104,7 +137,7 @@ export default function BlastControl() {
       `Kirim blast trigger request ke ${baseId}?\n\n` +
       `TimeOutTrigger: ${timeout} menit\n\n` +
       "Catatan: ini hanya menyatakan server menyimpan command. " +
-      "Bukan bukti rover sudah ARMED."
+      "This is not evidence that the rover is ARMED."
     );
 
     if (!confirmed) return;
@@ -134,12 +167,13 @@ export default function BlastControl() {
       setMessage(
         `TRIGGER REQUESTED · command #${body.command_id ?? "—"}. ` +
         "TriggerStart dan TimeOutTrigger sekarang tersimpan di server. " +
-        "BASE akan menerima config dari response upload berikutnya atau GET /api/config."
+        "BASE receives configuration from its next upload response or GET /api/config."
       );
 
       await refreshConfig();
+      await refreshTriggerStatus();
     } catch (err) {
-      setError(err?.message || "Gagal membuat blast trigger request.");
+      setError(err?.message || "Failed to create blast trigger request.");
     } finally {
       setBusy(false);
     }
@@ -181,8 +215,9 @@ export default function BlastControl() {
       );
 
       await refreshConfig();
+      await refreshTriggerStatus();
     } catch (err) {
-      setError(err?.message || "Gagal reset TriggerStart.");
+      setError(err?.message || "Failed to reset TriggerStart.");
     } finally {
       setBusy(false);
     }
@@ -192,7 +227,7 @@ export default function BlastControl() {
     <div className="l2 pgdoc2-page blast-page">
       <div className="l2head">
         <button className="pgdoc-back" onClick={() => navigate("/")}>
-          ← Kembali
+          ← Back
         </button>
 
         <div>
@@ -200,8 +235,8 @@ export default function BlastControl() {
             Blast Control — LoRa v1.6
           </h1>
           <div className="sub">
-            Web/server bertanggung jawab sampai BASE menerima config.
-            Distribusi trigger dari BASE ke rover melalui LoRa adalah ranah ITB.
+            The web/server is responsible until BASE receives the configuration.
+            Trigger distribution from BASE to rovers over LoRa is managed by ITB.
           </div>
         </div>
       </div>
@@ -209,13 +244,32 @@ export default function BlastControl() {
       <div className="blast-warning">
         <strong>COMMAND STATE ≠ FIELD ACKNOWLEDGEMENT</strong>
         <span>
-          TriggerStart=1 berarti command sudah tersimpan di server.
-          Itu belum membuktikan rover sudah menerima trigger, ARMED,
-          mendeteksi blast, atau selesai merekam.
+          TriggerStart=1 means the command has been stored on the server.
+          This does not prove that the rover has received the trigger or is ARMED,
+          detected a blast, or completed recording.
         </span>
       </div>
 
-      <section className="panel blast-card">
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 520px), 1fr))",
+        gap: 24,
+        alignItems: "stretch",
+        width: "100%",
+        maxWidth: 1440,
+        margin: "24px auto 0",
+      }}>
+      <section className="panel blast-card" style={{ minWidth: 0, width: "100%", maxWidth: "none" }}>
+        <div className="blast-section-head">
+          <div>
+            <h2>Blast command</h2>
+            <span>Site-level request state for the authoritative BASE.</span>
+          </div>
+          <span className="blast-role-badge">
+            {canOperate ? "OPERATOR CONTROL" : "VIEW ONLY"}
+          </span>
+        </div>
+
         <div className="blast-fields">
           <label>
             <span>Site</span>
@@ -223,7 +277,7 @@ export default function BlastControl() {
               value={siteId}
               onChange={(e) => setSiteId(e.target.value)}
             >
-              <option value="">— pilih site —</option>
+              <option value="">— select site —</option>
 
               {sites.map((site) => (
                 <option key={site} value={site}>
@@ -239,7 +293,7 @@ export default function BlastControl() {
           </label>
 
           <label>
-            <span>TimeOutTrigger · menit</span>
+            <span>TimeOutTrigger · minutes</span>
             <input
               type="number"
               min="1"
@@ -312,7 +366,7 @@ export default function BlastControl() {
             disabled={!baseId || busy}
             onClick={() =>
               refreshConfig().catch((err) =>
-                setError(err?.message || "Gagal membaca config BASE.")
+                setError(err?.message || "Failed to read BASE configuration.")
               )
             }
           >
@@ -322,7 +376,7 @@ export default function BlastControl() {
 
         {!canOperate && (
           <div className="blast-note">
-            Role viewer hanya dapat melihat konfigurasi.
+            Users with the viewer role can only view the configuration.
             START dan RESET memerlukan operator/admin;
             endpoint START juga tetap dijaga MFA oleh backend.
           </div>
@@ -341,10 +395,51 @@ export default function BlastControl() {
         )}
       </section>
 
-      <section className="panel blast-flow">
-        <h2>LoRa v1.6 command flow</h2>
+      <section className="panel blast-card" aria-label="TriggerStart delivery and ACK" style={{ minWidth: 0, width: "100%", maxWidth: "none" }}>
+        <div className="blast-section-head"><div><h2>TriggerStart · Konfirmasi perangkat</h2></div></div>
+        <div className="blast-config-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 210px), 1fr))" }}>
+          <div><span>Server TriggerStart</span><strong>
+            {triggerStatus?.server?.trigger_start == null ? "—" :
+              `${triggerStatus.server.trigger_start} · ${triggerStatus.server.trigger_start === 0 ? "RESET" : "START"}`}
+          </strong><small>{triggerStatus?.server?.reset_reason === "AUTO_TIMEOUT" ? "RESET otomatis karena timeout" : "Status konfigurasi server"}</small></div>
+          <div><span>ACK perangkat</span><strong>
+            {triggerStatus?.delivery?.acked ? `ACK ${triggerStatus.delivery.trigger_start} diterima` :
+              triggerStatus?.delivery?.pending ? "Menunggu ACK" : "Belum terkonfirmasi"}
+          </strong><small>{triggerStatus?.delivery?.ack_server_at ?
+            `Server menerima: ${new Date(triggerStatus.delivery.ack_server_at).toLocaleString()}` :
+            "Tidak ada ACK yang cocok untuk pending command terbaru"}</small></div>
+        </div>
+        {triggerStatus?.delivery?.ack_device_utc &&
+          <div className="blast-delivery-note">Waktu perangkat (UTC): <strong>{triggerStatus.delivery.ack_device_utc}</strong></div>}
+        {triggerStatus?.error && <div className="admin-error" role="alert">Status ACK belum tersedia: {triggerStatus.error}</div>}
+      </section>
+      </div>
 
-        <pre>{`WEB
+      <section className="panel blast-card" aria-label="Riwayat TriggerStart" style={{ width: "100%", maxWidth: 1440, margin: "24px auto 0" }}>
+        <h3>Riwayat TriggerStart</h3>
+        {triggerStatus?.events?.length ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            {triggerStatus.events.map((item, index) => (
+              <div className="blast-delivery-note" key={`${item.kind}-${item.occurred_at}-${index}`}>
+                <strong>{item.kind === "DEVICE_ACK" ? `ACK perangkat · ${item.trigger_start}` : "RESET otomatis · timeout"}</strong>
+                <span> · {new Date(item.occurred_at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p>Belum ada riwayat ACK atau timeout.</p>}
+      </section>
+
+      <details className="panel blast-flow">
+        <summary className="blast-flow-summary">
+          <span>
+            <strong>LoRa v1.6 command flow</strong>
+            <small>Reference flow · expand when needed</small>
+          </span>
+          <span aria-hidden>⌄</span>
+        </summary>
+
+        <div className="blast-flow-body">
+          <pre>{`WEB
 ↓
 operator set TimeOutTrigger
 ↓
@@ -353,7 +448,7 @@ operator START / TriggerStart = 1
 SERVER simpan config BASE
 ↓
 BASE menerima TriggerStart + TimeOutTrigger
-dari response upload berikutnya / GET /api/config
+from the next upload response / GET /api/config
 ↓
 ========== START RANAH ITB ==========
 BASE kirim trigger via LoRa
@@ -366,7 +461,8 @@ blast terdeteksi → record → simpan file SD
 atau
 timeout → kembali normal tanpa record
 ========== END RANAH ITB ==========`}</pre>
-      </section>
+        </div>
+      </details>
     </div>
   );
 }

@@ -72,6 +72,58 @@ async def weather_poll_loop(pool, interval_s: float = DEFAULT_POLL_INTERVAL_S) -
         await asyncio.sleep(interval_s)
 
 
+
+# Read-only last persisted Open-Meteo observation for each site.
+# It intentionally has no telemetry lookback limit and never calls Open-Meteo.
+@router.get("/latest")
+async def get_latest_weather(
+    request: Request, user: TokenPayload = Depends(require_role("viewer")),
+) -> dict:
+    pool = get_db_pool(request)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            WITH latest AS (
+                SELECT site_id, MAX(time) AS observed_at
+                FROM measurements
+                WHERE device_id = 'WEATHER-API'
+                  AND source_kind = 'external'
+                  AND quantity IN (
+                      'rainfall_external', 'rainfall_24h_external',
+                      'rainfall_72h_external', 'temperature_external',
+                      'humidity_external'
+                  )
+                GROUP BY site_id
+            )
+            SELECT m.site_id, l.observed_at,
+                   MAX(m.value) FILTER (WHERE m.quantity = 'rainfall_external') AS rainfall_mm,
+                   MAX(m.value) FILTER (WHERE m.quantity = 'rainfall_24h_external') AS rainfall_24h_mm,
+                   MAX(m.value) FILTER (WHERE m.quantity = 'rainfall_72h_external') AS rainfall_72h_mm,
+                   MAX(m.value) FILTER (WHERE m.quantity = 'temperature_external') AS temperature_c,
+                   MAX(m.value) FILTER (WHERE m.quantity = 'humidity_external') AS humidity_pct
+            FROM latest l
+            JOIN measurements m
+              ON m.site_id = l.site_id AND m.time = l.observed_at
+             AND m.device_id = 'WEATHER-API' AND m.source_kind = 'external'
+            GROUP BY m.site_id, l.observed_at
+            ORDER BY m.site_id
+            """
+        )
+    return {
+        "ok": True,
+        "sites": {
+            row["site_id"]: {
+                "observed_at": row["observed_at"].isoformat(),
+                "rainfall_mm": row["rainfall_mm"],
+                "rainfall_24h_mm": row["rainfall_24h_mm"],
+                "rainfall_72h_mm": row["rainfall_72h_mm"],
+                "temperature_c": row["temperature_c"],
+                "humidity_pct": row["humidity_pct"],
+            }
+            for row in rows
+        },
+    }
+
 @router.post("/fetch/{site_id}")
 async def fetch_weather(
     site_id: str, request: Request, user: TokenPayload = Depends(require_role("operator")),

@@ -1,7 +1,8 @@
 from __future__ import annotations
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from services.device_config_service.blast_expiry import expired
 from typing import Any
 from common.errors import NotFoundError
 @dataclass(frozen=True)
@@ -20,8 +21,11 @@ _CONTRACT_KEYS = {
 }
 _BATTERY_KEYS = {"battery_cal_m", "battery_cal_c"}
 _GLOBAL_KEYS = {"TriggerStart", "TimeOutTrigger"}
+# Device-facing config is intentionally pinned to the current ITB hardware inventory.
+# Legacy device rows may remain in DB for historical data/FK integrity but must not leak into firmware config.
 _CONTRACT_BATTERY_DEVICE_IDS = {"BASE-01", "ROVER-B1-01", "ROVER-B1-02"}
 def _compose_battery_cal(rows) -> dict[str, dict[str, float | None]]:
+    # Keep the response shape stable even if a current device has not been calibrated yet.
     result = {device_id: {"m": None, "c": None} for device_id in sorted(_CONTRACT_BATTERY_DEVICE_IDS)}
     for row in rows:
         device_id = row["device_id"]
@@ -130,6 +134,20 @@ class DeviceConfigRepository:
                 device["site_id"],
             )
             base_id = base["device_id"] if base is not None else device_id
+            requested_rows = await conn.fetch(
+                "SELECT config_key, config_value FROM device_config WHERE device_id = $1",
+                device_id,
+            )
+            base_rows = requested_rows if base_id == device_id else await conn.fetch(
+                "SELECT config_key, config_value FROM device_config WHERE device_id = $1",
+                base_id,
+            )
+            # BC-01: expiry-on-read uses the same transactional audit and reset logic
+            # as the independent reconciler, preventing two distinct expiry paths.
+            async with conn.transaction():
+                from services.device_config_service.blast_timeout_reconciler import expire_one_on_conn
+                await expire_one_on_conn(conn, base_id)
+            # Re-read after possible expiry; do not serve an obsolete trigger.
             requested_rows = await conn.fetch(
                 "SELECT config_key, config_value FROM device_config WHERE device_id = $1",
                 device_id,

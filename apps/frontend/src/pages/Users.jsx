@@ -1,7 +1,13 @@
+// Halaman Users — CRUD user (2026-09-20, baru — sebelumnya TIDAK ADA
+// cara membuat user lewat aplikasi sama sekali). Admin-only, dicek
+// inline (bukan route guard terpisah) — pola sama seperti AdminSites.jsx.
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+
 const ROLES = ["viewer", "operator", "admin"];
+
 export default function Users() {
   const { authFetch, auth } = useAuth();
   const navigate = useNavigate();
@@ -10,18 +16,21 @@ export default function Users() {
   const [showCreate, setShowCreate] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", password: "", role: "viewer" });
   const [busy, setBusy] = useState(null);
+
   if (auth?.role !== "admin") {
     return (
       <div className="l2 pgdoc2-page">
-        <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button></div>
+        <div className="l2head"><button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button></div>
         <div className="pgdoc2-card"><p>Halaman ini khusus role admin.</p></div>
       </div>
     );
   }
+
   function reload() {
     authFetch("/api/v1/users").then((r) => r.json()).then((body) => setUsers(body.users || [])).catch((e) => setError(String(e)));
   }
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function createUser() {
     setBusy("__new__");
     setError(null);
@@ -40,6 +49,7 @@ export default function Users() {
       setBusy(null);
     }
   }
+
   async function changeRole(user_id, role) {
     setBusy(user_id);
     setError(null);
@@ -50,12 +60,13 @@ export default function Users() {
         body: JSON.stringify({ role }),
       });
       const body = await r.json();
-      if (!r.ok) { setError(body.detail); return; }
+      if (!r.ok) { setError(body.detail); return; } // pesan jelas kalau ini admin terakhir
       reload();
     } finally {
       setBusy(null);
     }
   }
+
   async function toggleDisable(u) {
     setBusy(u.user_id);
     setError(null);
@@ -69,32 +80,35 @@ export default function Users() {
       setBusy(null);
     }
   }
+
   return (
     <div className="l2 pgdoc2-page">
       <div className="l2head">
-        <button className="pgdoc-back" onClick={() => navigate("/")}>← Kembali</button>
+        <button className="pgdoc-back" onClick={() => navigate("/")}>← Back</button>
         <h1 style={{ fontSize: 18, fontWeight: 650 }}>Users</h1>
-        <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ User Baru</button>
+        <button className="admin-btn admin-btn-primary" style={{ marginLeft: "auto" }} onClick={() => setShowCreate((v) => !v)}>+ New User</button>
       </div>
+
       <div className="panel" style={{ maxWidth: 950, margin: "0 auto", padding: 20 }}>
         {showCreate && (
           <div className="admin-warn" style={{ marginBottom: 16, background: "var(--panel-2)", color: "var(--ink-2)", borderColor: "var(--line)" }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <input placeholder="Email" value={newUser.email} onChange={(e) => setNewUser((u) => ({ ...u, email: e.target.value }))} />
-              <input placeholder="Password (min 8 karakter)" type="password" value={newUser.password} onChange={(e) => setNewUser((u) => ({ ...u, password: e.target.value }))} />
+              <input placeholder="Password (minimum 8 characters)" type="password" value={newUser.password} onChange={(e) => setNewUser((u) => ({ ...u, password: e.target.value }))} />
               <select value={newUser.role} onChange={(e) => setNewUser((u) => ({ ...u, role: e.target.value }))}>
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
-              <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newUser.email || newUser.password.length < 8} onClick={createUser}>Buat</button>
+              <button className="admin-btn admin-btn-primary" disabled={busy === "__new__" || !newUser.email || newUser.password.length < 8} onClick={createUser}>Create</button>
             </div>
           </div>
         )}
+
         {error && <div className="admin-error" style={{ marginBottom: 12 }}>{error}</div>}
-        {!users && !error && <div className="loading">Memuat…</div>}
+        {!users && !error && <div className="loading">Loading…</div>}
         {users && (
           <table className="devtable">
             <thead>
-              <tr><th>Email</th><th>Role</th><th>MFA</th><th>Status</th><th>Dibuat</th><th>Aksi</th></tr>
+              <tr><th>Email</th><th>Role</th><th>MFA</th><th>Status</th><th>Created</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {users.map((u) => (
@@ -105,15 +119,15 @@ export default function Users() {
                       {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </td>
-                  <td>{u.mfa_enabled ? "Aktif" : "—"}</td>
+                  <td>{u.mfa_enabled ? "Active" : "—"}</td>
                   <td>
                     <span className={"sc-dot " + (u.disabled_at ? "sc-off" : "sc-on")} style={{ display: "inline-block", marginRight: 6 }} />
-                    {u.disabled_at ? "Nonaktif" : "Aktif"}
+                    {u.disabled_at ? "Inactive" : "Active"}
                   </td>
                   <td>{u.created_at ? new Date(u.created_at).toLocaleDateString("id-ID") : "—"}</td>
                   <td>
                     <button className="devlink" style={{ color: u.disabled_at ? "var(--ok)" : "var(--bahaya)" }} disabled={busy === u.user_id} onClick={() => toggleDisable(u)}>
-                      {u.disabled_at ? "Aktifkan" : "Nonaktifkan"}
+                      {u.disabled_at ? "Activate" : "Deactivate"}
                     </button>
                   </td>
                 </tr>
