@@ -49,6 +49,7 @@ export default function PPK() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const initialLoadDone = useRef(false);
+  const pollingInFlight = useRef(false);
 
   const load = useCallback(async () => {
     setApplied(p => ({siteId:siteId.trim(),roverId,timeRange,limit,revision:p.revision+1}));
@@ -85,6 +86,40 @@ export default function PPK() {
     }).then(body=>{if(active)setRoverOptions(Array.isArray(body.rovers)?body.rovers:[])}).catch(()=>{if(active)setRoverOptions([])});
     return ()=>{active=false};
   }, [authFetch, siteId]);
+
+  // Refresh only the applied filters, not partially edited form controls.
+  // The backend operational endpoint stays separate from experimental QA.
+  useEffect(() => {
+    let alive = true;
+    const refresh = async () => {
+      if (!alive || document.visibilityState === "hidden" || pollingInFlight.current) return;
+      pollingInFlight.current = true;
+      try {
+        const params = new URLSearchParams({limit: String(Math.min(applied.limit, 2000))});
+        if (applied.siteId) params.set("site_id", applied.siteId);
+        if (applied.roverId) params.set("rover_device_id", applied.roverId);
+        const response = await authFetch(`/api/v1/ppk/solutions?${params}`);
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof body?.detail === "string" ? body.detail : `HTTP ${response.status}`);
+        if (!alive) return;
+        setPayload(body);
+        setError("");
+        setApplied(prev => ({...prev, revision: prev.revision + 1}));
+      } catch (err) {
+        if (alive) setError(err?.message || "Automatic PPK refresh failed");
+      } finally {
+        pollingInFlight.current = false;
+      }
+    };
+    const timer = window.setInterval(() => { void refresh(); }, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [authFetch, applied.siteId, applied.roverId, applied.limit]);
 
   const rows = payload?.rows || [];
   const contract = payload?.solution_contract || {};
@@ -147,7 +182,7 @@ export default function PPK() {
         <button className="admin-btn ppk-refresh" disabled={loading} onClick={load}>
           {loading ? "Loading…" : "Refresh"}
         </button>
-        <div className="ppk-load-note">No automatic polling. Refresh manually to avoid unnecessary API load.</div>
+        <div className="ppk-load-note">Automatic refresh every 60 seconds while this tab is visible. Manual Refresh applies the selected filters.</div>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
