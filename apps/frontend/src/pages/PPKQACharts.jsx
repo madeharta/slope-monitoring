@@ -57,8 +57,7 @@ export default function PPKQACharts({siteId,roverId,timeRange,limit,revision}){
     let alive = true;
     setLoading(true);
     setError('');
-    setRows(null);
-    setAvailability(null);
+    // Keep the last validated QA chart visible during background refresh.
 
     async function loadQaPages() {
       if (!siteId?.trim() || !roverId?.trim()) {
