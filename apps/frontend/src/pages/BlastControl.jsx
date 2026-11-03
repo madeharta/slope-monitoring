@@ -5,6 +5,9 @@ import "./blast.css";
 
 export default function BlastControl() {
   const navigate = useNavigate();
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyData, setHistoryData] = useState({ events: [], total: 0, total_pages: 1 });
+  const [historyError, setHistoryError] = useState("");
   const { authFetch, auth } = useAuth();
 
   const canOperate = auth?.role === "admin" || auth?.role === "operator";
@@ -58,6 +61,7 @@ export default function BlastControl() {
         (d) => String(d.device_type || "").toLowerCase() === "base"
       );
 
+    setHistoryPage(1);
     setBaseId(base?.device_id || "");
   }, [devices, siteId]);
 
@@ -116,6 +120,26 @@ export default function BlastControl() {
   }, [baseId, authFetch]);
 
   useEffect(() => {
+    if (!baseId) { setHistoryData({ events: [], total: 0, total_pages: 1 }); return; }
+    let active = true;
+    async function loadHistory() {
+      try {
+        const res = await authFetch(
+          `/api/v1/blast/trigger-history?base_id=${encodeURIComponent(baseId)}&page=${historyPage}&page_size=10`
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        if (active) { setHistoryData(body); setHistoryError(""); }
+      } catch (err) {
+        if (active) setHistoryError(err?.message || "Failed to load history");
+      }
+    }
+    loadHistory();
+    const timer = window.setInterval(loadHistory, 10000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [baseId, historyPage, authFetch]);
+
+  useEffect(() => {
     if (!baseId) return;
 
     refreshConfig(baseId).catch((err) => {
@@ -134,9 +158,9 @@ export default function BlastControl() {
     }
 
     const confirmed = window.confirm(
-      `Kirim blast trigger request ke ${baseId}?\n\n` +
-      `TimeOutTrigger: ${timeout} menit\n\n` +
-      "Catatan: ini hanya menyatakan server menyimpan command. " +
+      `Send a blast trigger request to ${baseId}?\n\n` +
+      `TimeOutTrigger: ${timeout} minutes\n\n` +
+      "Note: this only confirms that the server stored the command. " +
       "This is not evidence that the rover is ARMED."
     );
 
@@ -166,7 +190,7 @@ export default function BlastControl() {
 
       setMessage(
         `TRIGGER REQUESTED · command #${body.command_id ?? "—"}. ` +
-        "TriggerStart dan TimeOutTrigger sekarang tersimpan di server. " +
+        "TriggerStart and TimeOutTrigger are now stored on the server. " +
         "BASE receives configuration from its next upload response or GET /api/config."
       );
 
@@ -183,8 +207,8 @@ export default function BlastControl() {
     if (!canOperate || !baseId || busy) return;
 
     const confirmed = window.confirm(
-      `Reset TriggerStart ${baseId} ke 0?\n\n` +
-      "TimeOutTrigger akan tetap dipertahankan."
+      `Reset TriggerStart for ${baseId} to 0?\n\n` +
+      "TimeOutTrigger will be preserved."
     );
 
     if (!confirmed) return;
@@ -211,7 +235,7 @@ export default function BlastControl() {
       }
 
       setMessage(
-        "TriggerStart di-reset ke 0. TimeOutTrigger tetap dipertahankan."
+        "TriggerStart has been reset to 0. TimeOutTrigger remains unchanged."
       );
 
       await refreshConfig();
@@ -340,8 +364,8 @@ export default function BlastControl() {
         </div>
 
         <div className="blast-delivery-note">
-          Delivery ke BASE:
-          <strong> response upload berikutnya / GET /api/config</strong>
+          Delivery to BASE:
+          <strong> next upload response / GET /api/config</strong>
         </div>
 
         <div className="blast-actions">
@@ -377,8 +401,8 @@ export default function BlastControl() {
         {!canOperate && (
           <div className="blast-note">
             Users with the viewer role can only view the configuration.
-            START dan RESET memerlukan operator/admin;
-            endpoint START juga tetap dijaga MFA oleh backend.
+            START and RESET require operator/admin access;
+            the START endpoint also requires MFA.
           </div>
         )}
 
@@ -396,73 +420,85 @@ export default function BlastControl() {
       </section>
 
       <section className="panel blast-card" aria-label="TriggerStart delivery and ACK" style={{ minWidth: 0, width: "100%", maxWidth: "none" }}>
-        <div className="blast-section-head"><div><h2>TriggerStart · Konfirmasi perangkat</h2></div></div>
+        <div className="blast-section-head"><div><h2>TriggerStart · Device acknowledgment</h2></div></div>
         <div className="blast-config-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 210px), 1fr))" }}>
           <div><span>Server TriggerStart</span><strong>
             {triggerStatus?.server?.trigger_start == null ? "—" :
               `${triggerStatus.server.trigger_start} · ${triggerStatus.server.trigger_start === 0 ? "RESET" : "START"}`}
-          </strong><small>{triggerStatus?.server?.reset_reason === "AUTO_TIMEOUT" ? "RESET otomatis karena timeout" : "Status konfigurasi server"}</small></div>
-          <div><span>ACK perangkat</span><strong>
-            {triggerStatus?.delivery?.acked ? `ACK ${triggerStatus.delivery.trigger_start} diterima` :
-              triggerStatus?.delivery?.pending ? "Menunggu ACK" : "Belum terkonfirmasi"}
+          </strong><small>{triggerStatus?.server?.reset_reason === "AUTO_TIMEOUT" ? "Automatically reset due to timeout" : "Server configuration status"}</small></div>
+          <div><span>Device ACK</span><strong>
+            {triggerStatus?.delivery?.acked ? `ACK ${triggerStatus.delivery.trigger_start} received` :
+              triggerStatus?.delivery?.pending ? "Awaiting ACK" : "Not confirmed"}
           </strong><small>{triggerStatus?.delivery?.ack_server_at ?
-            `Server menerima: ${new Date(triggerStatus.delivery.ack_server_at).toLocaleString()}` :
-            "Tidak ada ACK yang cocok untuk pending command terbaru"}</small></div>
+            `Server received: ${new Date(triggerStatus.delivery.ack_server_at).toLocaleString()}` :
+            "No matching ACK for the latest pending command"}</small></div>
         </div>
         {triggerStatus?.delivery?.ack_device_utc &&
-          <div className="blast-delivery-note">Waktu perangkat (UTC): <strong>{triggerStatus.delivery.ack_device_utc}</strong></div>}
-        {triggerStatus?.error && <div className="admin-error" role="alert">Status ACK belum tersedia: {triggerStatus.error}</div>}
+          <div className="blast-delivery-note">Device time (UTC): <strong>{triggerStatus.delivery.ack_device_utc}</strong></div>}
+        {triggerStatus?.error && <div className="admin-error" role="alert">ACK status unavailable: {triggerStatus.error}</div>}
       </section>
       </div>
 
-      <section className="panel blast-card" aria-label="Riwayat TriggerStart" style={{ width: "100%", maxWidth: 1440, margin: "24px auto 0" }}>
-        <h3>Riwayat TriggerStart</h3>
-        {triggerStatus?.events?.length ? (
-          <div style={{ display: "grid", gap: 8 }}>
-            {triggerStatus.events.map((item, index) => (
-              <div className="blast-delivery-note" key={`${item.kind}-${item.occurred_at}-${index}`}>
-                <strong>{item.kind === "DEVICE_ACK" ? `ACK perangkat · ${item.trigger_start}` : "RESET otomatis · timeout"}</strong>
-                <span> · {new Date(item.occurred_at).toLocaleString()}</span>
-              </div>
-            ))}
+      <section className="panel blast-card blast-history-v2" aria-label="TriggerStart History" style={{ width: "100%", maxWidth: 1440, margin: "24px auto 0" }}>
+        <div className="blast-section-head">
+          <div>
+            <h3>TriggerStart History</h3>
           </div>
-        ) : <p>Belum ada riwayat ACK atau timeout.</p>}
-      </section>
-
-      <details className="panel blast-flow">
-        <summary className="blast-flow-summary">
-          <span>
-            <strong>LoRa v1.6 command flow</strong>
-            <small>Reference flow · expand when needed</small>
-          </span>
-          <span aria-hidden>⌄</span>
-        </summary>
-
-        <div className="blast-flow-body">
-          <pre>{`WEB
-↓
-operator set TimeOutTrigger
-↓
-operator START / TriggerStart = 1
-↓
-SERVER simpan config BASE
-↓
-BASE menerima TriggerStart + TimeOutTrigger
-from the next upload response / GET /api/config
-↓
-========== START RANAH ITB ==========
-BASE kirim trigger via LoRa
-+ TimeOutTrigger
-+ time_record_ms
-↓
-ROVER-B1-01 & ROVER-B1-02 menunggu accel > threshold_g
-↓
-blast terdeteksi → record → simpan file SD
-atau
-timeout → kembali normal tanpa record
-========== END RANAH ITB ==========`}</pre>
         </div>
-      </details>
+        {(() => {
+          const events = Array.isArray(historyData.events) ? historyData.events : [];
+          const pageSize = 10;
+          const totalPages = Math.max(1, historyData.total_pages || 1);
+          const currentPage = Math.min(historyPage, totalPages);
+          const visible = events;
+          const formatServer = (value) => {
+            if (!value) return "—";
+            const date = new Date(value);
+            if (Number.isNaN(date.valueOf())) return "—";
+            return new Intl.DateTimeFormat("en-GB", {
+              timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+            }).format(date);
+          };
+          if (!events.length) return <p>{historyError ? `Failed to load history: ${historyError}` : "No history for the selected BASE."}</p>;
+          return <>
+            <div style={{ width: "100%", overflowX: "auto", border: "1px solid #d8e2eb", borderRadius: 8 }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 940, textAlign: "left", fontSize: 13 }}>
+                <thead style={{ background: "#f3f6fa" }}><tr>
+                  {["Server time (WIB)", "Device ID", "Event type", "TriggerStart", "Status", "Pending ID", "Device time (raw)", "Details"].map(label =>
+                    <th key={label} scope="col" style={{ padding: "12px 10px", borderBottom: "1px solid #d8e2eb", whiteSpace: "nowrap" }}>{label}</th>)}
+                </tr></thead>
+                <tbody>{visible.map((item, idx) => {
+                  const ack = item.kind === "DEVICE_ACK";
+                  const rejected = item.kind === "ACK_REJECTED";
+                  const timeout = item.kind === "AUTO_TIMEOUT_RESET";
+                  const label = ack ? "Accepted" : rejected ? "Rejected" : timeout ? "Timeout" : "Other";
+                  const tone = ack ? "#16764d" : rejected ? "#b42318" : timeout ? "#946200" : "#526579";
+                  const cell = { padding: "10px", borderBottom: "1px solid #e7edf3" };
+                  return <tr key={`${item.kind}-${item.id ?? item.pending_config_id ?? "x"}-${item.occurred_at ?? "x"}-${idx}`}>
+                    <td style={{ ...cell, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatServer(item.occurred_at)}</td>
+                    <td style={cell}>{item.device_id || (timeout ? "System" : "—")}</td>
+                    <td style={cell}>{ack ? "Device ACK" : rejected ? "ACK rejected" : timeout ? "Automatic reset" : (item.kind || "—")}</td>
+                    <td style={cell}>{item.trigger_start ?? "—"}</td>
+                    <td style={cell}><span style={{ color: tone, fontWeight: 700 }}>{label}</span></td>
+                    <td style={cell}>{item.pending_config_id ?? "—"}</td>
+                    <td style={{ ...cell, whiteSpace: "nowrap" }}>{item.device_timestamp_utc || "—"}</td>
+                    <td style={cell}>{rejected ? (item.reason_code || "Rejected by server") : timeout ? "Command timed out" : ack ? "ACK recorded" : "—"}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
+              <small>Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, historyData.total)} of {historyData.total} events.</small>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button className="admin-btn" type="button" disabled={currentPage <= 1} onClick={() => setHistoryPage(p => Math.max(1, p - 1))}>Previous</button>
+                <span aria-live="polite">{currentPage} / {totalPages}</span>
+                <button className="admin-btn" type="button" disabled={currentPage >= totalPages} onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}>Next</button>
+              </div>
+            </div>
+          </>;
+        })()}
+      </section>
     </div>
   );
 }
