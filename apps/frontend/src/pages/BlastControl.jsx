@@ -5,6 +5,9 @@ import "./blast.css";
 
 export default function BlastControl() {
   const navigate = useNavigate();
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyData, setHistoryData] = useState({ events: [], total: 0, total_pages: 1 });
+  const [historyError, setHistoryError] = useState("");
   const { authFetch, auth } = useAuth();
 
   const canOperate = auth?.role === "admin" || auth?.role === "operator";
@@ -58,6 +61,7 @@ export default function BlastControl() {
         (d) => String(d.device_type || "").toLowerCase() === "base"
       );
 
+    setHistoryPage(1);
     setBaseId(base?.device_id || "");
   }, [devices, siteId]);
 
@@ -114,6 +118,26 @@ export default function BlastControl() {
     const timer = window.setInterval(update, 10000);
     return () => { active = false; window.clearInterval(timer); };
   }, [baseId, authFetch]);
+
+  useEffect(() => {
+    if (!baseId) { setHistoryData({ events: [], total: 0, total_pages: 1 }); return; }
+    let active = true;
+    async function loadHistory() {
+      try {
+        const res = await authFetch(
+          `/api/v1/blast/trigger-history?base_id=${encodeURIComponent(baseId)}&page=${historyPage}&page_size=10`
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        if (active) { setHistoryData(body); setHistoryError(""); }
+      } catch (err) {
+        if (active) setHistoryError(err?.message || "Gagal mengambil riwayat");
+      }
+    }
+    loadHistory();
+    const timer = window.setInterval(loadHistory, 10000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [baseId, historyPage, authFetch]);
 
   useEffect(() => {
     if (!baseId) return;
@@ -415,54 +439,71 @@ export default function BlastControl() {
       </section>
       </div>
 
-      <section className="panel blast-card" aria-label="Riwayat TriggerStart" style={{ width: "100%", maxWidth: 1440, margin: "24px auto 0" }}>
-        <h3>Riwayat TriggerStart</h3>
-        {triggerStatus?.events?.length ? (
-          <div style={{ display: "grid", gap: 8 }}>
-            {triggerStatus.events.map((item, index) => (
-              <div className="blast-delivery-note" key={`${item.kind}-${item.occurred_at}-${index}`}>
-                <strong>{item.kind === "DEVICE_ACK" ? `ACK perangkat · ${item.trigger_start}` : "RESET otomatis · timeout"}</strong>
-                <span> · {new Date(item.occurred_at).toLocaleString()}</span>
-              </div>
-            ))}
+      <section className="panel blast-card blast-history-v2" aria-label="Riwayat TriggerStart" style={{ width: "100%", maxWidth: 1440, margin: "24px auto 0" }}>
+        <div className="blast-section-head">
+          <div>
+            <h3>Riwayat TriggerStart</h3>
+            <span>Audit ACK dan timeout berdasarkan waktu server. Maksimal 10 baris per halaman.</span>
           </div>
-        ) : <p>Belum ada riwayat ACK atau timeout.</p>}
-      </section>
-
-      <details className="panel blast-flow">
-        <summary className="blast-flow-summary">
-          <span>
-            <strong>LoRa v1.6 command flow</strong>
-            <small>Reference flow · expand when needed</small>
-          </span>
-          <span aria-hidden>⌄</span>
-        </summary>
-
-        <div className="blast-flow-body">
-          <pre>{`WEB
-↓
-operator set TimeOutTrigger
-↓
-operator START / TriggerStart = 1
-↓
-SERVER simpan config BASE
-↓
-BASE menerima TriggerStart + TimeOutTrigger
-from the next upload response / GET /api/config
-↓
-========== START RANAH ITB ==========
-BASE kirim trigger via LoRa
-+ TimeOutTrigger
-+ time_record_ms
-↓
-ROVER-B1-01 & ROVER-B1-02 menunggu accel > threshold_g
-↓
-blast terdeteksi → record → simpan file SD
-atau
-timeout → kembali normal tanpa record
-========== END RANAH ITB ==========`}</pre>
         </div>
-      </details>
+        {(() => {
+          const events = Array.isArray(historyData.events) ? historyData.events : [];
+          const pageSize = 10;
+          const totalPages = Math.max(1, historyData.total_pages || 1);
+          const currentPage = Math.min(historyPage, totalPages);
+          const visible = events;
+          const formatServer = (value) => {
+            if (!value) return "—";
+            const date = new Date(value);
+            if (Number.isNaN(date.valueOf())) return "—";
+            return new Intl.DateTimeFormat("id-ID", {
+              timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+            }).format(date);
+          };
+          if (!events.length) return <p>{historyError ? `Riwayat gagal dimuat: ${historyError}` : "Belum ada riwayat untuk BASE yang dipilih."}</p>;
+          return <>
+            <div style={{ width: "100%", overflowX: "auto", border: "1px solid #d8e2eb", borderRadius: 8 }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 940, textAlign: "left", fontSize: 13 }}>
+                <thead style={{ background: "#f3f6fa" }}><tr>
+                  {["Waktu server (WIB)", "Device ID", "Jenis event", "TriggerStart", "Status", "Pending ID", "Waktu device (raw)", "Keterangan"].map(label =>
+                    <th key={label} scope="col" style={{ padding: "12px 10px", borderBottom: "1px solid #d8e2eb", whiteSpace: "nowrap" }}>{label}</th>)}
+                </tr></thead>
+                <tbody>{visible.map((item, idx) => {
+                  const ack = item.kind === "DEVICE_ACK";
+                  const rejected = item.kind === "ACK_REJECTED";
+                  const timeout = item.kind === "AUTO_TIMEOUT_RESET";
+                  const label = ack ? "Diterima" : rejected ? "Ditolak" : timeout ? "Timeout" : "Lainnya";
+                  const tone = ack ? "#16764d" : rejected ? "#b42318" : timeout ? "#946200" : "#526579";
+                  const cell = { padding: "10px", borderBottom: "1px solid #e7edf3" };
+                  return <tr key={`${item.kind}-${item.id ?? item.pending_config_id ?? "x"}-${item.occurred_at ?? "x"}-${idx}`}>
+                    <td style={{ ...cell, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatServer(item.occurred_at)}</td>
+                    <td style={cell}>{item.device_id || (timeout ? "Sistem" : "—")}</td>
+                    <td style={cell}>{ack ? "ACK perangkat" : rejected ? "ACK ditolak" : timeout ? "Reset otomatis" : (item.kind || "—")}</td>
+                    <td style={cell}>{item.trigger_start ?? "—"}</td>
+                    <td style={cell}><span style={{ color: tone, fontWeight: 700 }}>{label}</span></td>
+                    <td style={cell}>{item.pending_config_id ?? "—"}</td>
+                    <td style={{ ...cell, whiteSpace: "nowrap" }}>{item.device_timestamp_utc || "—"}</td>
+                    <td style={cell}>{rejected ? (item.reason_code || "Ditolak oleh server") : timeout ? "Timeout command" : ack ? "ACK tersimpan" : "—"}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
+              <small>Menampilkan {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, historyData.total)} dari {historyData.total} event.</small>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button className="admin-btn" type="button" disabled={currentPage <= 1} onClick={() => setHistoryPage(p => Math.max(1, p - 1))}>Sebelumnya</button>
+                <span aria-live="polite">{currentPage} / {totalPages}</span>
+                <button className="admin-btn" type="button" disabled={currentPage >= totalPages} onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}>Berikutnya</button>
+              </div>
+            </div>
+          </>;
+        })()}
+        <small style={{ display: "block", marginTop: 8, color: "#64748b" }}>
+          Data diambil 10 baris per halaman dari server. Penolakan ACK yang tercatat mulai setelah migrasi audit diterapkan. Tanda — berarti data tidak tersedia.
+        </small>
+        <div className="blast-delivery-note">ACK adalah laporan penerimaan konfigurasi perangkat, bukan bukti peledakan.</div>
+      </section>
     </div>
   );
 }

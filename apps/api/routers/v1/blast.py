@@ -152,6 +152,68 @@ async def trigger_ack(
 
     return {"ok": True}
 
+@router.get('/trigger-history')
+async def trigger_history(
+    request: Request,
+    base_id: str = Query(..., min_length=1, max_length=128),
+    page: int = Query(1, ge=1, le=100000),
+    page_size: int = Query(10, ge=1, le=100),
+    user: TokenPayload = Depends(require_role('viewer')),
+) -> dict:
+    """Site command ACK/rejection/timeout audit, bounded DB-side pagination."""
+    pool = get_db_pool(request)
+    async with pool.acquire() as conn:
+        base = await conn.fetchrow("""
+            SELECT device_id, site_id FROM public.devices
+            WHERE device_id=$1 AND lower(device_type) IN ('base', 'gnss_base')
+        """, base_id)
+        if base is None:
+            raise HTTPException(status_code=404, detail='BASE not found')
+        # Same query drives count and page, so UI totals match filtered records.
+        sql = """
+            WITH event_rows AS (
+              SELECT 'DEVICE_ACK'::text AS kind, a.id AS event_id,
+                a.device_id, a.pending_config_id, a.trigger_start::int AS trigger_start,
+                a.server_received_at AS occurred_at, a.device_timestamp_utc,
+                NULL::text AS reason_code
+              FROM public.blast_trigger_acks a
+              JOIN public.device_config_pending p ON p.id=a.pending_config_id
+              WHERE p.device_id=$1
+                AND EXISTS (SELECT 1 FROM public.devices d
+                  WHERE d.device_id=a.device_id AND d.site_id=$2)
+              UNION ALL
+              SELECT 'ACK_REJECTED', r.id, r.device_id,
+                NULL::bigint, r.trigger_start::int, r.server_received_at,
+                r.device_timestamp_utc, r.reason_code
+              FROM public.blast_trigger_ack_rejections r
+              WHERE r.base_id=$1 OR (r.base_id IS NULL AND r.site_id=$2)
+              UNION ALL
+              SELECT 'AUTO_TIMEOUT_RESET', t.id, t.device_id,
+                NULL::bigint, 0, t.expired_at, NULL::timestamp, 'AUTO_TIMEOUT'
+              FROM public.blast_trigger_timeout_events t WHERE t.device_id=$1
+            )
+        """
+        total = await conn.fetchval(sql + 'SELECT count(*) FROM event_rows', base_id, base['site_id'])
+        rows = await conn.fetch(sql + """
+            SELECT * FROM event_rows
+            ORDER BY occurred_at DESC, kind ASC, event_id DESC
+            LIMIT $3 OFFSET $4
+        """, base_id, base['site_id'], page_size, (page-1)*page_size)
+    def iso(v):
+        return v.isoformat() if v is not None else None
+    return {
+        'base_id': base_id, 'page': page, 'page_size': page_size,
+        'total': total, 'total_pages': max(1, (total + page_size - 1)//page_size),
+        'events': [dict(
+            kind=row['kind'], id=row['event_id'], device_id=row['device_id'],
+            pending_config_id=row['pending_config_id'], trigger_start=row['trigger_start'],
+            occurred_at=iso(row['occurred_at']),
+            device_timestamp_utc=iso(row['device_timestamp_utc']),
+            reason_code=row['reason_code'],
+        ) for row in rows],
+    }
+
+
 @router.get('/trigger-status')
 async def trigger_status(
     request: Request,
@@ -185,7 +247,7 @@ async def trigger_status(
             WHERE device_id=$1 ORDER BY expired_at DESC, id DESC LIMIT 1
         ''', base_id)
         recent_acks = await conn.fetch('''
-            SELECT a.id, a.trigger_start, a.pending_config_id,
+            SELECT a.id, a.device_id, a.trigger_start, a.pending_config_id,
                    a.server_received_at, a.device_timestamp_utc
             FROM public.blast_trigger_acks a
             WHERE a.device_id=$1 ORDER BY a.server_received_at DESC, a.id DESC LIMIT 10
@@ -225,7 +287,7 @@ async def trigger_status(
     )
     ack_matches = bool(current_pending and ack and ack['trigger_start'] == server_value)
     events = [
-        dict(kind='DEVICE_ACK', trigger_start=row['trigger_start'],
+        dict(kind='DEVICE_ACK', device_id=row['device_id'], trigger_start=row['trigger_start'],
              occurred_at=iso(row['server_received_at']),
              device_timestamp_utc=iso(row['device_timestamp_utc']),
              pending_config_id=row['pending_config_id'])
