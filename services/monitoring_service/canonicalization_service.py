@@ -178,6 +178,15 @@ class CanonicalizationService:
                 raise InvalidCsvError(
                     f"position.csv rover '{rover_id}' belongs to a different site than uploader '{device_id}'"
                 )
+        if self._pool is not None:
+            battery_points = [
+                (sample.device_id, site_id, sample.timestamp_utc, sample.battery_voltage_v)
+                for sample in rows if sample.battery_voltage_v is not None
+            ]
+            if battery_points:
+                await self._measurements.write_battery_points(
+                    battery_points, source_file=file_name,
+                )
         # Store the latest direct GNSS position independently from displacement.
         # A valid coordinate is useful for the device map even when the rover
         # baseline is unavailable or displacement remains UNVALIDATED.

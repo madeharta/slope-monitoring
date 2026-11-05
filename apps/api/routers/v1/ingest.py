@@ -102,6 +102,18 @@ async def upload_data(file_name: str, request: Request) -> Response:
             await RawStagingRepository(pool).insert_gnss_raw_batch([
                 (device_id, ts, raw, headers.file_name) for device_id, ts, raw in parsed.blast_rawx_rows
             ])
+        if headers.communication_mode == '4g' and request.headers.get('X-Battery-Voltage'):
+            from datetime import datetime, timezone
+            from services.device_service.battery_telemetry import persist_four_g_battery
+            uploaded_at = claim.row.get('received_at') if claim.row else None
+            if uploaded_at is None:
+                # Only for legacy test doubles; production claim has received_at.
+                uploaded_at = datetime.now(timezone.utc)
+            await persist_four_g_battery(
+                pool, device_id=headers.device_id,
+                voltage_header=request.headers.get('X-Battery-Voltage'),
+                uploaded_at=uploaded_at, file_name=headers.file_name,
+            )
         await file_uploads.mark_processed(headers.file_name)
         return Response(
             status_code=200,

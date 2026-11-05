@@ -91,6 +91,24 @@ class MeasurementsWriter:
             validation_status=validation_status,
         )
 
+    async def write_battery_points(self, points: list[tuple], *, source_file: str | None) -> None:
+        """Store device voltage in volts, idempotently by device/quantity/time.
+
+        No battery quality-status classification. LoRa values already belong to
+        each CSV row's device; 4G values belong to the HTTP uploading device.
+        """
+        if not points:
+            return
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for device_id, site_id, timestamp_utc, voltage in points:
+            groups[timestamp_utc].append((device_id, site_id, 'battery_voltage', voltage, 'V'))
+        for timestamp_utc, rows in groups.items():
+            await self._insert_rows(
+                timestamp_utc, rows, source_kind='device', source_file=source_file,
+                validation_status='not_applicable',
+            )
+
     async def write_weather(
         self, site_id: str, timestamp_utc: datetime, rainfall_mm: float, temperature_c: float, humidity_pct: float,
         rainfall_24h_mm: float | None = None, rainfall_72h_mm: float | None = None,

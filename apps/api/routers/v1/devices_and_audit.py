@@ -32,7 +32,25 @@ async def list_devices(request: Request, user: TokenPayload = Depends(require_ro
         rows = await conn.fetch(
             """
             SELECT device_id, device_type, site_id, label, first_seen, last_seen,
-                   (last_seen IS NOT NULL AND last_seen > now() - make_interval(secs => $1)) AS online
+                   (last_seen IS NOT NULL AND last_seen > now() - make_interval(secs => $1)) AS online,
+                   (SELECT NULLIF(NULLIF(p.request_headers ->> 'X-Device-Version', '0'), '')
+                    FROM public.file_uploads f
+                    JOIN public.file_upload_payloads p ON p.file_name=f.file_name
+                    WHERE f.device_id=devices.device_id AND f.processing_status='processed'
+                      AND NULLIF(NULLIF(p.request_headers ->> 'X-Device-Version', '0'), '') IS NOT NULL
+                    ORDER BY f.received_at DESC, f.file_name DESC LIMIT 1) AS firmware_version,
+                   (SELECT NULLIF(NULLIF(NULLIF(p.request_headers ->> 'X-ICCID', '-1'), '0'), '')
+                    FROM public.file_uploads f
+                    JOIN public.file_upload_payloads p ON p.file_name=f.file_name
+                    WHERE f.device_id=devices.device_id AND f.processing_status='processed'
+                      AND NULLIF(NULLIF(NULLIF(p.request_headers ->> 'X-ICCID', '-1'), '0'), '') IS NOT NULL
+                    ORDER BY f.received_at DESC, f.file_name DESC LIMIT 1) AS iccid,
+                   (SELECT m.value FROM public.measurements m
+                    WHERE m.device_id=devices.device_id AND m.quantity='battery_voltage'
+                    ORDER BY m.time DESC LIMIT 1) AS battery_voltage_v,
+                   (SELECT m.time FROM public.measurements m
+                    WHERE m.device_id=devices.device_id AND m.quantity='battery_voltage'
+                    ORDER BY m.time DESC LIMIT 1) AS battery_recorded_at
             FROM devices
             ORDER BY site_id, device_id
             """,
@@ -47,9 +65,70 @@ async def list_devices(request: Request, user: TokenPayload = Depends(require_ro
                 "first_seen": r["first_seen"].isoformat() if r["first_seen"] else None,
                 "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
                 "online": r["online"],
+                "firmware_version": r["firmware_version"],
+                "iccid": r["iccid"],
+                "battery_voltage_v": r["battery_voltage_v"],
+                "battery_recorded_at": r["battery_recorded_at"].isoformat() if r["battery_recorded_at"] else None,
             }
             for r in rows
         ],
+    }
+
+
+@router.get('/devices/{device_id}/battery-history')
+async def device_battery_history(
+    device_id: str,
+    request: Request,
+    from_time: datetime = Query(..., alias='from'),
+    to_time: datetime = Query(..., alias='to'),
+    page: int = Query(1, ge=1, le=100000),
+    page_size: int = Query(15, ge=1, le=100),
+    user: TokenPayload = Depends(require_role('viewer')),
+) -> dict:
+    """Weather-aligned time window, 15 raw rows/page and bounded chart bins."""
+    if (from_time.tzinfo is None or to_time.tzinfo is None or
+            from_time >= to_time or (to_time - from_time).days > 366):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail='Invalid timezone-aware date/time range (max 366 days)')
+    pool = get_db_pool(request)
+    async with pool.acquire() as conn:
+        found = await conn.fetchval('SELECT 1 FROM public.devices WHERE device_id=$1', device_id)
+        if not found:
+            raise NotFoundError('device', device_id)
+        total = await conn.fetchval("""
+            SELECT count(*) FROM public.measurements
+            WHERE device_id=$1 AND quantity='battery_voltage' AND time >= $2 AND time <= $3
+        """, device_id, from_time, to_time)
+        page_rows = await conn.fetch("""
+            SELECT m.time, m.value, m.source_file, f.communication_mode
+            FROM public.measurements m
+            LEFT JOIN public.file_uploads f ON f.file_name=m.source_file
+            WHERE m.device_id=$1 AND m.quantity='battery_voltage'
+              AND m.time >= $2 AND m.time <= $3
+            ORDER BY m.time DESC, m.received_at DESC
+            LIMIT $4 OFFSET $5
+        """, device_id, from_time, to_time, page_size, (page - 1) * page_size)
+        # No averaging / interpolation: chart contains raw ITB voltage measurements.
+        # Bounded to the latest 10,000 observations to control response size.
+        chart_rows = await conn.fetch("""
+            SELECT bucket, voltage_v FROM (
+              SELECT time AS bucket, value AS voltage_v
+              FROM public.measurements
+              WHERE device_id=$1 AND quantity='battery_voltage'
+                AND time >= $2 AND time <= $3
+              ORDER BY time DESC LIMIT 10000
+            ) latest ORDER BY bucket ASC
+        """, device_id, from_time, to_time)
+    return {
+        'device_id': device_id, 'page': page, 'page_size': page_size,
+        'total': total, 'total_pages': max(1, (total + page_size - 1) // page_size),
+        'chart_aggregation': 'none_raw_points',
+        'chart_truncated': total > 10000,
+        'chart': [{'time': r['bucket'].isoformat(), 'voltage_v': float(r['voltage_v'])}
+                  for r in chart_rows],
+        'rows': [{'time': r['time'].isoformat(), 'voltage_v': r['value'],
+                  'source': r['communication_mode'] or 'unknown', 'source_file': r['source_file']}
+                 for r in page_rows],
     }
 
 

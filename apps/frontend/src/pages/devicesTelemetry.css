@@ -1,0 +1,23 @@
+/* Device battery overview: follows the Weather Station card and time-filter visual language. */
+.device-overview{max-width:1700px;margin:16px auto 24px;padding:0 16px}
+.device-overview-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 16px;color:#253c4e}
+.device-overview-heading h2{font-size:20px;margin:0 0 5px}
+.device-overview-heading p,.device-overview-heading>span{font-size:12px;color:#637d91;margin:0}
+.device-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
+.device-overview-card{background:white;border:1px solid #d7e3eb;border-top:3px solid #3c8eae;border-radius:15px;padding:19px 18px;min-width:0;display:flex;flex-direction:column;gap:10px;color:#253c4e}
+.device-overview-card:nth-child(4n+2){border-top-color:#5c91c0}.device-overview-card:nth-child(4n+3){border-top-color:#8b80b8}.device-overview-card:nth-child(4n+4){border-top-color:#4eaa8b}
+.device-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:45px}
+.device-card-top h2{font-size:16px;line-height:1.35;margin:0 0 5px;overflow-wrap:anywhere}
+.device-card-top p,.device-card-last,.device-card-caption{font-size:12px;color:#688092;margin:0}
+.device-card-explore{border:0;background:none;color:#53758e;font-size:12px;cursor:pointer;flex-shrink:0;padding:3px;font-weight:600}
+.device-card-explore:hover,.device-card-explore:focus-visible{text-decoration:underline}
+.device-card-voltage{margin-top:9px;white-space:nowrap}.device-card-voltage strong{font-size:36px;line-height:1;font-weight:750}.device-card-voltage span{font-size:15px;color:#637d91}
+.device-card-trend{height:135px;margin-top:4px;min-width:0}.device-battery-sparkline{height:100%;width:100%;min-width:0}
+.device-card-empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:#688092;font-size:12px;padding:8px}
+.device-card-meta{margin-top:auto;border-top:1px solid #e5edf2;padding-top:12px;display:flex;flex-direction:column;gap:6px;font-size:12px;overflow-wrap:anywhere;color:#526b7b}
+.device-card-meta b{color:#253c4e;margin-right:5px}
+.device-overview-no-data{color:#688092;font-size:13px}
+@media(max-width:1200px){.device-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.device-overview{padding:0 8px}.device-overview-grid{grid-template-columns:1fr}}
+
+.device-overview-filters{max-width:1700px;margin:0 auto;padding:0 16px}.device-overview-filters .table-filters{margin-bottom:0}
