@@ -67,11 +67,6 @@ function BatteryMiniChart({ points, deviceId }) {
 
 function DeviceOverviewCard({ device, authFetch, from, to, fromHour, toHour, onExplore }) {
   const [state, setState] = useState({ status: 'loading', chart: [], total: 0 });
-  const [refreshTick, setRefreshTick] = useState(0);
-  useEffect(() => {
-    const timer = window.setInterval(() => setRefreshTick(t => t + 1), 60000);
-    return () => window.clearInterval(timer);
-  }, []);
   const start = `${from}T${fromHour}:00+07:00`;
   const end = `${to}T${toHour}:59+07:00`;
   const valid = Boolean(from && to && fromHour && toHour && Date.parse(start) < Date.parse(end));
@@ -85,7 +80,7 @@ function DeviceOverviewCard({ device, authFetch, from, to, fromHour, toHour, onE
       .then(b => { if (!controller.signal.aborted) setState({ status: 'ready', chart: b.chart || [], total: b.total || 0 }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: 'error', chart: [], total: 0 }); });
     return () => controller.abort();
-  }, [authFetch, device.device_id, start, end, valid, refreshTick]);
+  }, [authFetch, device.device_id, start, end, valid]);
   const voltage = device.battery_voltage_v == null || !Number.isFinite(Number(device.battery_voltage_v))
     ? null : Number(device.battery_voltage_v);
   const latest = voltage == null ? '—' : voltage.toFixed(2);
@@ -115,8 +110,6 @@ function DeviceBatteryDetail({ device, authFetch, onBack, initialRange }) {
   const [history, setHistory] = useState({ chart: [], rows: [], total: 0, total_pages: 1 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [refreshTick, setRefreshTick] = useState(0);
-  useEffect(() => { const timer = window.setInterval(() => setRefreshTick(v => v + 1), 60000); return () => window.clearInterval(timer); }, []);
   const start = `${from}T${fromHour}:00+07:00`;
   const end = `${to}T${toHour}:59+07:00`;
   const valid = from && to && fromHour && toHour && Date.parse(start) < Date.parse(end);
@@ -130,7 +123,7 @@ function DeviceBatteryDetail({ device, authFetch, onBack, initialRange }) {
       .then(b => { if (!controller.signal.aborted) { setHistory(b); setLoading(false); } })
       .catch(e => { if (!controller.signal.aborted) { setError(e.message); setLoading(false); } });
     return () => controller.abort();
-  }, [authFetch, device.device_id, start, end, page, refreshTick, valid]);
+  }, [authFetch, device.device_id, start, end, page, valid]);
   const totalPages = Math.max(1, history.total_pages || 1);
   return <main className="weather-page">
     <div className="weather-heading"><div><p className="weather-eyebrow">Devices · Device telemetry</p><h1>{device.label || device.device_id} — Battery History</h1><p>Device ID: {device.device_id} · Site: {device.site_id}</p></div></div>
