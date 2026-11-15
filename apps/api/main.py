@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apps.api.middlewares.error_handler import register_error_handlers
-from apps.api.routers.v1 import auth, blast, dashboard, device_config, devices_and_audit, ingest, model_ops, ppk, sensors, sites, uploads, users, weather, base_references, wu_weather
+from apps.api.routers.v1 import gnss_locations, auth, blast, dashboard, device_config, devices_and_audit, ingest, model_ops, ppk, sensors, sites, uploads, users, weather, base_references, wu_weather
 from ml.pipeline.preprocessing.ppk_engine import RTKLibPPKEngine
 from services.rinex_service.acquisition import RINEXNavigationAcquisition
 from services.rinex_service.cache import RINEXCache
@@ -135,6 +135,7 @@ app.include_router(base_references.router)
 app.include_router(sensors.router)
 app.include_router(dashboard.router)
 app.include_router(sites.router)
+app.include_router(gnss_locations.router)
 app.include_router(devices_and_audit.router)
 app.include_router(uploads.router)
 app.include_router(users.router)

@@ -5,6 +5,7 @@ import { getOverview } from "../api";
 import { getPalette } from "../theme";
 import { useAuth } from "../context/AuthContext.jsx";
 import SiteMap from "../components/SiteMap.jsx";
+import { mergeGnssLocations } from "../lib/mergeGnssLocations";
 
 const LABEL = { bahaya: "Danger", siaga: "Warning", normal: "Normal", unknown: "Not verified" };
 const SCOL = { bahaya: "var(--bahaya)", siaga: "var(--siaga)", normal: "var(--ok)", unknown: "#8b8c96" };
@@ -89,6 +90,22 @@ export default function Overview() {
   const pal = getPalette(variant);
   const { authFetch } = useAuth();
   const [warnOpen, setWarnOpen] = useState(true);
+  const [gnssLocations, setGnssLocations] = useState([]);
+  useEffect(() => {
+    let active = true;
+    async function refreshGnssLocations() {
+      try {
+        const response = await authFetch("/api/v1/gnss-locations");
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active && Array.isArray(payload?.locations)) setGnssLocations(payload.locations);
+      } catch (_) { /* Keep original device positions when location API is unavailable. */ }
+    }
+    refreshGnssLocations();
+    const timer = setInterval(refreshGnssLocations, 60000);
+    return () => { active = false; clearInterval(timer); };
+  }, [authFetch]);
+
 
   // B12_PPK_CROSSPAGE_AUTO: single QA read, no periodic PPK solver or upload.
   const [ppkQaSummary, setPpkQaSummary] = useState({ state: "loading", result: null });
@@ -232,7 +249,7 @@ export default function Overview() {
 
   return (
     <>
-      <div className="mapwrap"><SiteMap slopes={slopes} devices={devices} /></div>
+      <div className="mapwrap"><SiteMap slopes={slopes} devices={mergeGnssLocations(devices, gnssLocations)} /></div>
       <div className="scrim" />
 
       {/* LEFT — editorial headline + active-alarm cards, floating over the map */}

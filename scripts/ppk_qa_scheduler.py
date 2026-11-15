@@ -23,7 +23,7 @@ import urllib.request
 UTC = dt.timezone.utc
 MAX_BATCH_WINDOWS = 24
 DEFAULT_ROVERS = ("ROVER-B1-01", "ROVER-B1-02")
-REF = (-6.867113383, 107.578782477, 880.5476)  # provisional SPP, not surveyed
+REF = (-6.867113383, 107.578782477, 880.5476)  # legacy QA-only default; NOT for relocated installation
 
 
 def windows(now: dt.datetime, grace_minutes: int, backfill_hours: int):
@@ -403,6 +403,70 @@ def validate_nav(raw: bytes, start, end):
     return found  # Preliminary only; RTKLIB must validate TOE/PRN
 
 
+
+
+def select_reference(state_file: Path, base_id: str, window_start: dt.datetime) -> tuple[float, float, float]:
+    """Select persisted SPP BASE epoch, fail closed if unavailable or inconsistent.
+
+    No implicit relocation or baseline resets. A pending relocation blocks PPK
+    until a distinct epoch is explicitly established by the reference manager.
+    """
+    import math
+    if not state_file.is_file():
+        raise ValueError('AUTO_REFERENCE_MISSING')
+    data = json.loads(state_file.read_text())
+    if data.get('pending_base_relocation'):
+        raise ValueError('AUTO_REFERENCE_RELOCATION_PENDING')
+    active = data.get('provisional_base_reference')
+    if not isinstance(active, dict) or active.get('device_id') != base_id:
+        raise ValueError('AUTO_REFERENCE_BASE_MISMATCH')
+    if data.get('reference_epoch', 0) < 1:
+        raise ValueError('AUTO_REFERENCE_EPOCH_MISSING')
+    if active.get('source') != 'RTKLIB_SPP' or active.get('validation_status') != 'provisional':
+        raise ValueError('AUTO_REFERENCE_UNVERIFIED_SOURCE')
+    if active.get('accepted_solutions', 0) < 10 or active.get('min_satellites', 0) < 7 or active.get('max_spread_m', float('inf')) > 10:
+        raise ValueError('AUTO_REFERENCE_QUALITY_REJECTED')
+    try:
+        observed = dt.datetime.fromisoformat(active.get('observed_to_utc', active['observed_from_utc']).replace('Z', '+00:00'))
+        reference = tuple(float(active[k]) for k in ('latitude', 'longitude', 'ellipsoidal_height_m'))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('AUTO_REFERENCE_INVALID') from exc
+    if observed.tzinfo is None or observed.astimezone(UTC) > window_start.astimezone(UTC):
+        raise ValueError('AUTO_REFERENCE_NOT_EFFECTIVE')
+    if (not all(math.isfinite(x) for x in reference)
+        or not -90 <= reference[0] <= 90
+        or not -180 <= reference[1] <= 180
+        or not -15000 <= reference[2] <= 15000):
+        raise ValueError('AUTO_REFERENCE_OUT_OF_RANGE')
+    return reference
+
+
+def config_for_reference(source: Path, target: Path, reference: tuple[float, float, float]) -> None:
+    """Write a window-scoped config so worker's strict reference check holds."""
+    import math
+    import re
+    if any(not math.isfinite(x) for x in reference):
+        raise ValueError('AUTO_REFERENCE_NONFINITE')
+    values = dict(zip(('ant2-pos1', 'ant2-pos2', 'ant2-pos3'), reference))
+    raw = source.read_text()
+    counts = {k: 0 for k in values}
+    lines = []
+    for line in raw.splitlines(keepends=True):
+        match = re.match(r'^(\s*)(ant2-pos[123])(\s*=)([^#\r\n]*)(.*)$', line)
+        if match:
+            key = match.group(2)
+            counts[key] += 1
+            if counts[key] > 1:
+                raise ValueError('AUTO_REFERENCE_DUPLICATE_CONFIG')
+            suffix = match.group(5)
+            line = f'{match.group(1)}{key}{match.group(3)} {values[key]:.10f}' + ((' ' + suffix) if suffix.startswith('#') else suffix)
+            if not line.endswith('\n'):
+                line += '\n'
+        lines.append(line)
+    if any(v != 1 for v in counts.values()):
+        raise ValueError('AUTO_REFERENCE_CONFIG_FIELDS_MISSING')
+    target.write_text(''.join(lines))
+
 def run(args):
     enabled = os.getenv('PPK_QA_AUTO_ENABLED', 'false').lower() == 'true'
     if args.apply and not enabled:
@@ -433,19 +497,110 @@ def run(args):
     rovers = selected_rovers(args.rover)
     selected = planned_windows(dt.datetime.now(UTC), args.grace_minutes, args.backfill_hours,
                                args.since, args.until)
+    auto_state = os.getenv('PPK_QA_AUTO_REFERENCE_STATE', '').strip()
+    # Opt-in SPP initialization; executed before QA PPK so the first usable
+    # BASE window can create a reference without an operator-provided position.
+    if os.getenv('PPK_QA_AUTO_SPP_ENABLED', 'false').lower() == 'true':
+        if not auto_state:
+            raise RuntimeError('PPK_QA_AUTO_REFERENCE_STATE_REQUIRED')
+        # Recompute the BASE marker on every cycle, not only at initialization.
+        # The state manager ignores stale windows and requires multiple distinct
+        # windows before an automatic reference-epoch relocation.
+        state_path = Path(auto_state).expanduser()
+        initialized = state_path.is_file() and bool(json.loads(state_path.read_text()).get('provisional_base_reference'))
+        attempted = False
+        for start, end in reversed(selected):
+            cmd = [sys.executable, str(root/'scripts/gnss_auto_spp.py'),
+                   '--base', args.base, '--since', start.isoformat(),
+                   '--until', end.isoformat(), '--state', str(state_path),
+                   '--nav-cache', str(nav_cache)]
+            if args.no_download:
+                cmd.append('--no-download')
+            if args.apply:
+                cmd.append('--apply-local')
+            result = subprocess.run(cmd, env=env, cwd=root, capture_output=True,
+                                    text=True, timeout=args.timeout_seconds)
+            if result.returncode == 0:
+                attempted = True
+                if args.apply:
+                    initialized = True
+                # One most recent successful window is sufficient per cycle.
+                break
+        if not initialized and not attempted:
+            raise RuntimeError('AUTO_SPP_REFERENCE_NOT_READY')
+        if not initialized and not args.apply:
+            raise RuntimeError('AUTO_SPP_DRY_RUN_NO_REFERENCE_PERSISTED')
+    # Best-effort location metadata only: do not replace rover displacement baselines.
+    # Uses the same read-only source role and state file as BASE initialization.
+    if args.apply and os.getenv('PPK_QA_AUTO_DEVICE_LOCATIONS_ENABLED', 'false').lower() == 'true':
+        if not auto_state or os.getenv('PPK_QA_AUTO_SPP_ENABLED', 'false').lower() != 'true':
+            raise RuntimeError('AUTO_DEVICE_LOCATIONS_REQUIRES_AUTO_SPP_STATE')
+        for rover in rovers:
+            status = 'WAITING_INPUT'
+            for start, end in reversed(selected):
+                cmd = [sys.executable, str(root/'scripts/gnss_auto_spp.py'),
+                       '--base', rover, '--reference-base', args.base,
+                       '--since', start.isoformat(), '--until', end.isoformat(),
+                       '--state', auto_state, '--nav-cache', str(nav_cache), '--apply-local']
+                if args.no_download:
+                    cmd.append('--no-download')
+                result = subprocess.run(cmd, env=env, cwd=root, capture_output=True,
+                                        text=True, timeout=args.timeout_seconds)
+                if result.returncode == 0:
+                    status = 'MARKER_READY'
+                    break
+            print(json.dumps({'device_id': rover, 'location_status': status,
+                              'location_source': 'RTKLIB_SPP'}), flush=True)
+    # Operational location persistence is independently opt-in and only allowed
+    # during an explicit QA apply. It never changes GNSS references or baselines.
+    if args.apply and os.getenv('MAGRIS_GNSS_LOCATION_PUBLISH_ENABLED', 'false').lower() == 'true':
+        if os.getenv('PPK_QA_AUTO_SPP_ENABLED', 'false').lower() != 'true' or not auto_state:
+            raise RuntimeError('LOCATION_PUBLISH_REQUIRES_AUTO_SPP_STATE')
+        if os.getenv('PPK_QA_AUTO_DEVICE_LOCATIONS_ENABLED', 'false').lower() != 'true':
+            raise RuntimeError('LOCATION_PUBLISH_REQUIRES_DEVICE_LOCATION_UPDATES')
+        if not os.getenv('MAGRIS_GNSS_LOCATION_WRITER_DSN'):
+            raise RuntimeError('LOCATION_PUBLISH_WRITER_DSN_MISSING')
+        publisher = root / 'scripts/publish_gnss_locations.py'
+        if not publisher.is_file():
+            raise RuntimeError('LOCATION_PUBLISH_SCRIPT_MISSING')
+        publish_result = subprocess.run(
+            [sys.executable, str(publisher), '--state', auto_state, '--apply'],
+            env=env, cwd=root, capture_output=True, text=True,
+            timeout=args.timeout_seconds,
+        )
+        if publish_result.returncode != 0:
+            raise RuntimeError('LOCATION_PUBLISH_FAILED')
+        print(json.dumps({'location_publish': 'APPLIED'}), flush=True)
     for start, end in selected:
         for rover in rovers:
             record = {'window':start.isoformat(), 'until':end.isoformat(), 'rover':rover, 'mode':'APPLY_QA' if args.apply else 'DRY_RUN'}
             try:
                 nav, count, digest = nav_for(start, end, nav_cache, not args.no_download)
                 record.update(nav_gps_near=count, nav_sha256=digest, nav_validation='PRELIMINARY')
-                cmd = [sys.executable, str(root/'scripts/ppk_qa_worker.py'), '--site',args.site,'--base',args.base,
-                       '--rover',rover,'--base-lat',str(REF[0]),'--base-lon',str(REF[1]),'--base-alt',str(REF[2]),
-                       '--nav',str(nav),'--config',str(config),'--since',start.isoformat(),'--until',end.isoformat(),
-                       '--window-minutes','60','--min-matched',str(args.min_matched)]
-                if args.apply:
-                    cmd.append('--apply')
-                result = subprocess.run(cmd, env=env, cwd=root, capture_output=True, text=True, timeout=args.timeout_seconds)
+                if auto_state:
+                    reference = select_reference(Path(auto_state).expanduser(), args.base, start)
+                    # Worker requires ant2-pos* to agree with the selected reference.
+                    # Never edit the shared/production config on disk.
+                    with tempfile.TemporaryDirectory(prefix='magris-qa-ref-') as scratch:
+                        scoped_config = Path(scratch) / 'rtklib.conf'
+                        config_for_reference(config, scoped_config, reference)
+                        cmd = [sys.executable, str(root/'scripts/ppk_qa_worker.py'), '--site',args.site,'--base',args.base,
+                               '--rover',rover,'--base-lat',str(reference[0]),'--base-lon',str(reference[1]),'--base-alt',str(reference[2]),
+                               '--nav',str(nav),'--config',str(scoped_config),'--since',start.isoformat(),'--until',end.isoformat(),
+                               '--window-minutes','60','--min-matched',str(args.min_matched)]
+                        if args.apply:
+                            cmd.append('--apply')
+                        result = subprocess.run(cmd, env=env, cwd=root, capture_output=True, text=True, timeout=args.timeout_seconds)
+                    record['reference_source'] = 'SPP_STATE'
+                else:
+                    # Preserve original QA behavior for deployments without opt-in.
+                    cmd = [sys.executable, str(root/'scripts/ppk_qa_worker.py'), '--site',args.site,'--base',args.base,
+                           '--rover',rover,'--base-lat',str(REF[0]),'--base-lon',str(REF[1]),'--base-alt',str(REF[2]),
+                           '--nav',str(nav),'--config',str(config),'--since',start.isoformat(),'--until',end.isoformat(),
+                           '--window-minutes','60','--min-matched',str(args.min_matched)]
+                    if args.apply:
+                        cmd.append('--apply')
+                    result = subprocess.run(cmd, env=env, cwd=root, capture_output=True, text=True, timeout=args.timeout_seconds)
                 record['worker_exit_code'] = result.returncode
                 # Do not echo arbitrary database/error strings; record only recognized status tokens.
                 statuses = re.findall(r'"status"\s*:\s*"([A-Z_]+)"', result.stdout)
@@ -460,7 +615,51 @@ def run(args):
                     record['nav_reason'] = str(exc).split(' ', 1)[-1][:64]
                 failures.append(record)
             print(json.dumps(record), flush=True)
+    # Publish QA PPK markers only after completed QA worker windows.
+    # Separate QA read-only credentials from operational marker writer;
+    # marker updates never change displacement baselines or reference epochs.
+    if (args.apply and not failures and
+            os.getenv('MAGRIS_GNSS_PPK_LOCATION_PUBLISH_ENABLED', 'false').lower() == 'true'):
+        if os.getenv('OPERATIONAL_ALARMS_ENABLED', 'false').lower() == 'true':
+            raise RuntimeError('PPK_LOCATION_PUBLISH_ALARMS_MUST_BE_OFF')
+        required = ('MAGRIS_GNSS_QA_READER_DSN',
+                    'MAGRIS_GNSS_LOCATION_WRITER_DSN',
+                    'MAGRIS_GNSS_LOCATION_WRITER_ROLE')
+        if any(not os.getenv(key) for key in required):
+            raise RuntimeError('PPK_LOCATION_PUBLISH_DATABASE_CONFIG_MISSING')
+        bridge = root / 'scripts/publish_qa_gnss_locations.py'
+        if not bridge.is_file():
+            raise RuntimeError('PPK_LOCATION_BRIDGE_MISSING')
+        result = subprocess.run(
+            [sys.executable, str(bridge), '--apply'], env=env, cwd=root,
+            capture_output=True, text=True, timeout=args.timeout_seconds,
+        )
+        if result.returncode:
+            raise RuntimeError('PPK_LOCATION_PUBLISH_FAILED')
+        payload = parse_qa_publisher_output(result.stdout)
+        print(json.dumps({'ppk_location_publish': payload['mode'],
+                          'device_ids': payload['device_ids']}), flush=True)
     return 1 if failures else 0
+
+
+def parse_qa_publisher_output(stdout: str) -> dict:
+    """Validate QA publisher contract before claiming operational marker updates."""
+    try:
+        payload = json.loads(stdout.strip())
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError('PPK_LOCATION_PUBLISH_INVALID_RESPONSE') from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError('PPK_LOCATION_PUBLISH_INVALID_RESPONSE')
+    mode = payload.get('mode')
+    devices = payload.get('device_ids')
+    if (mode not in ('APPLIED', 'NO_ELIGIBLE_NEW_PPK')
+            or not isinstance(devices, list)
+            or any(x not in DEFAULT_ROVERS for x in devices)
+            or len(devices) != len(set(devices))
+            or (mode == 'NO_ELIGIBLE_NEW_PPK' and devices)
+            or (mode == 'APPLIED' and not devices)):
+        raise RuntimeError('PPK_LOCATION_PUBLISH_INVALID_RESPONSE')
+    return {'mode': mode, 'device_ids': devices}
 
 
 def main():
