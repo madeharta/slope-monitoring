@@ -1,0 +1,9 @@
+[Unit]
+Description=MAGRIS GNSS map location cycle every five minutes
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+RandomizedDelaySec=20
+Unit=magris-gnss-location-v11r6-p1.service
+[Install]
+WantedBy=timers.target

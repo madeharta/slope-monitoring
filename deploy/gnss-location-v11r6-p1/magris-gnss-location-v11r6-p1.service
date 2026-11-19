@@ -1,0 +1,12 @@
+[Unit]
+Description=MAGRIS independent GNSS map location publisher
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+Environment=MAGRIS_GNSS_LOCATION_ENABLE=false
+Environment=OPERATIONAL_ALARMS_ENABLED=false
+ExecStart=/usr/bin/python3 /opt/landslidemon/releases/gnss-location-c560bc0/runner.py
+TimeoutStartSec=4200
+NoNewPrivileges=true
+UMask=0077
