@@ -1,0 +1,33 @@
+{
+  "engine": "RTKLIB-EX",
+  "version": "2.5.1",
+  "source_tag": "v2.5.1",
+  "source_repository": "https://github.com/rtklibexplorer/RTKLIB.git",
+  "source_commit": "62d4677ed8425a4e2748c6d390b500d1afb493fc",
+  "source_tree": "69dc8207a12474ad2f513577abc6559141665820",
+  "source_archive_sha256": "5241e7ea06ea8451c1d8ddc4f3aed6822f6d46f49561507fd277dc14e82527ea",
+  "ublox_decoder_sha256": "880f15809bf652aa279d62b2d4beb7a8d7864536856182a916e5a88c432ca001",
+  "builder_image": "docker.io/library/gcc@sha256:e2b2e6c645719241ee25ed8f5e6c1f8cc6e5c41d9f5b1fd38d9940120f12957f",
+  "platform": "linux/amd64",
+  "compiler_version": "13.5.0",
+  "build_script_sha256": "c0a224136be0b5cba7f99144ebc11de9613ad886b59fa56674be25d0a5a5d049",
+  "build_package_inventory_sha256": "ba17001ffaad0498a3bfa1261ebf7fb45dd1a1bf6bf7b7176d384f31fd28d9f1",
+  "build_plan_checksums": {
+    "convbin": "1b28a098b60da8abf954b1529f1989d778ab2a7e34ce5b16bdb71907659dc116",
+    "rnx2rtkp": "20ae7b3e06ab6e3c20a2385afa91eadae62f61962e7dea37b755bfa83e1b810d"
+  },
+  "binary_checksums": {
+    "convbin": "8c83baeff890602fb8e6ea39476b576adc39acd9f8a9cb273f7389cb73ddd5f3",
+    "rnx2rtkp": "ec8abc33077f3c96e8e12ae45731eead676efb704bcef71bb375b7949598fa5c"
+  },
+  "build_status": "PASS",
+  "scientific_acceptance": "PENDING",
+  "production_approved": false,
+  "repository_build_script": {
+    "path": "deploy/rtklib/build.sh",
+    "sha256": "f8f678a18f2db279c1cefb4836116b81b5dcedc697bdc29f8966e9dcea6ae064",
+    "derived_from_sha256": "c0a224136be0b5cba7f99144ebc11de9613ad886b59fa56674be25d0a5a5d049",
+    "normalization": "Remove trailing empty lines at EOF",
+    "rebuild_verified": false
+  }
+}
