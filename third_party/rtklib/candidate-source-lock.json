@@ -1,0 +1,30 @@
+{
+  "candidates": [
+    {
+      "candidate": "upstream",
+      "repository": "https://github.com/tomojitakasu/RTKLIB.git",
+      "source_commit": "180043ee24b6d2b168f98b64be15f69d50046b1a",
+      "source_tree": "0566df2a00432147c110e19391767dd1250b3336",
+      "source_archive_sha256": "664bb1e6f60be746f5a6900890eb71eeb2b2c0d7b2ed9cdeaf7dbf4544a6fb36",
+      "ublox_decoder_sha256": "d08da0090cb0a93d3d78c77bc29b658f9f8371485d8855b08b442c6da29dccb7",
+      "builder_image_digest": null,
+      "compiler_version": null,
+      "compile_flags": null,
+      "binary_checksums": null,
+      "status": "SOURCE_ACQUIRED_NOT_ACCEPTED"
+    },
+    {
+      "candidate": "explorer",
+      "repository": "https://github.com/rtklibexplorer/RTKLIB.git",
+      "source_commit": "755e6379ae600e71980b6b20d846d6d35ca8a1aa",
+      "source_tree": "52b120e11abb40699b0874cefa76600bc99898bb",
+      "source_archive_sha256": "6ff65e58194ce1d10c196066ff6a09cb85fa8a68644951f4b703f7e60f031265",
+      "ublox_decoder_sha256": "8486c2683cce0467202cd4c20dbc4db0a2caabe6a8261460b0f8ff9ce3b8f5b5",
+      "builder_image_digest": null,
+      "compiler_version": null,
+      "compile_flags": null,
+      "binary_checksums": null,
+      "status": "SOURCE_ACQUIRED_NOT_ACCEPTED"
+    }
+  ]
+}
